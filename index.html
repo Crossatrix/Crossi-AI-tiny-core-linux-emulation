@@ -254,31 +254,52 @@
       : "⌨ Show Keyboard";
   });
 
+  // --- Real PS/2 scancode table, extracted from v86's own keyboard
+  // adapter (the `w` map inside libv86.js). Values >255 are extended
+  // (0xE0-prefixed) scancodes - encoded as two bytes below, exactly
+  // like v86's internal m()/l() functions do.
+  const SCANCODES = {
+    Escape:1, Digit1:2, Digit2:3, Digit3:4, Digit4:5, Digit5:6, Digit6:7,
+    Digit7:8, Digit8:9, Digit9:10, Digit0:11, Minus:12, Equal:13,
+    Backspace:14, Tab:15, KeyQ:16, KeyW:17, KeyE:18, KeyR:19, KeyT:20,
+    KeyY:21, KeyU:22, KeyI:23, KeyO:24, KeyP:25, BracketLeft:26,
+    BracketRight:27, Enter:28, ControlLeft:29, KeyA:30, KeyS:31, KeyD:32,
+    KeyF:33, KeyG:34, KeyH:35, KeyJ:36, KeyK:37, KeyL:38, Semicolon:39,
+    Quote:40, Backquote:41, ShiftLeft:42, Backslash:43, KeyZ:44, KeyX:45,
+    KeyC:46, KeyV:47, KeyB:48, KeyN:49, KeyM:50, Comma:51, Period:52,
+    Slash:53, ShiftRight:54, AltLeft:56, Space:57, CapsLock:58,
+    F1:59, F2:60, F3:61, F4:62, F5:63, F6:64, F7:65, F8:66, F9:67, F10:68,
+    F11:87, F12:88,
+    ControlRight:57373, AltRight:57400,
+    ArrowUp:57416, ArrowLeft:57419, ArrowRight:57421, ArrowDown:57424,
+    Home:57415, End:57423, PageUp:57417, PageDown:57425,
+    Insert:57426, Delete:57427,
+  };
+
   // --- Sticky modifier state ---
-  const stickyKeys = ["ShiftLeft", "ShiftRight", "ControlLeft", "AltLeft", "AltRight", "CapsLock"];
   const heldModifiers = new Set();
 
-  function dispatchKey(type, code, extraKeys = {}) {
-    // v86's built-in keyboard adapter listens on `window`, not
-    // `document`, and reads event.code directly against its own
-    // scancode table - so we dispatch there with a real `code`.
-    const ev = new KeyboardEvent(type, {
-      code: code,
-      key: extraKeys.key || code,
-      bubbles: true,
-      cancelable: true,
-      shiftKey: heldModifiers.has("ShiftLeft") || heldModifiers.has("ShiftRight"),
-      ctrlKey: heldModifiers.has("ControlLeft"),
-      altKey: heldModifiers.has("AltLeft") || heldModifiers.has("AltRight"),
-      ...extraKeys,
-    });
-    // Some WebKit versions don't set event.code correctly from the
-    // constructor - define it explicitly as a safety net so v86's
-    // `t.code` lookup always sees the right value.
-    try {
-      Object.defineProperty(ev, "code", { value: code, configurable: true });
-    } catch (e) { /* ignore if already correctly set */ }
-    window.dispatchEvent(ev);
+  function sendScancode(scancode, isPress) {
+    let byte = scancode;
+    if (!isPress) byte |= 128; // set break-code bit on release
+    if (byte > 255) {
+      emulator.bus.send("keyboard-code", byte >> 8);
+      emulator.bus.send("keyboard-code", byte & 255);
+    } else {
+      emulator.bus.send("keyboard-code", byte);
+    }
+  }
+
+  function keyDown(code) {
+    const sc = SCANCODES[code];
+    if (sc === undefined) { console.log("No scancode for", code); return; }
+    sendScancode(sc, true);
+  }
+
+  function keyUp(code) {
+    const sc = SCANCODES[code];
+    if (sc === undefined) return;
+    sendScancode(sc, false);
   }
 
   document.querySelectorAll(".key").forEach((btn) => {
@@ -290,26 +311,24 @@
         if (heldModifiers.has(code)) {
           heldModifiers.delete(code);
           btn.classList.remove("active");
-          dispatchKey("keyup", code);
+          keyUp(code);
         } else {
           heldModifiers.add(code);
           btn.classList.add("active");
-          dispatchKey("keydown", code);
+          keyDown(code);
         }
       });
     } else {
       btn.addEventListener("click", () => {
-        dispatchKey("keydown", code);
-        // brief delay so v86 registers a distinct press before release
-        setTimeout(() => dispatchKey("keyup", code), 40);
+        keyDown(code);
+        setTimeout(() => keyUp(code), 40);
 
-        // auto-release non-Ctrl/Alt one-shot modifiers after a normal
-        // key press, mimicking typical mobile "sticky shift" behavior
+        // auto-release Shift after one keypress, like mobile "sticky shift"
         for (const mod of [...heldModifiers]) {
           if (mod.startsWith("Shift")) {
             heldModifiers.delete(mod);
             document.querySelector(`.key[data-code="${mod}"]`)?.classList.remove("active");
-            dispatchKey("keyup", mod);
+            keyUp(mod);
           }
         }
       });
