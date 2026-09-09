@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TinyCore Linux — In-Browser</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #111;
+    color: #eee;
+    font-family: monospace;
+    height: 100%;
+  }
+  #wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 16px;
+    color: #7fd67f;
+    margin-bottom: 8px;
+  }
+  #status {
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #aaa;
+  }
+  #screen_container {
+    border: 2px solid #333;
+    background: #000;
+  }
+  /* v86 renders into a canvas it creates inside this container */
+  #screen_container canvas {
+    display: block;
+  }
+  #controls {
+    margin-top: 10px;
+  }
+  button {
+    background: #222;
+    color: #eee;
+    border: 1px solid #555;
+    padding: 6px 14px;
+    font-family: monospace;
+    cursor: pointer;
+    margin-right: 6px;
+  }
+  button:hover {
+    background: #333;
+  }
+</style>
+</head>
+<body>
+
+<div id="wrapper">
+  <h1>TinyCore Linux — running in your browser via v86</h1>
+  <div id="status">Loading emulator…</div>
+  <div id="screen_container">
+    <div style="white-space: pre; font: 14px monospace; color: #0f0;" id="text_screen"></div>
+    <canvas style="display: none;"></canvas>
+  </div>
+  <div id="controls">
+    <button id="btn_reset">Reset</button>
+    <button id="btn_fullscreen">Fullscreen</button>
+  </div>
+</div>
+
+<script src="libv86.js"></script>
+<script>
+  const statusEl = document.getElementById("status");
+
+  const emulator = new V86({
+    wasm_path: "v86.wasm",
+    screen_container: document.getElementById("screen_container"),
+    bios: { url: "seabios.bin" },
+    vga_bios: { url: "vgabios.bin" },
+    cdrom: { url: "tinycore.iso" },
+    autostart: true,
+    memory_size: 128 * 1024 * 1024,   // 128MB RAM — plenty for TinyCore
+    vga_memory_size: 8 * 1024 * 1024,
+  });
+
+  emulator.add_listener("emulator-ready", () => {
+    statusEl.textContent = "Booting TinyCore…";
+  });
+
+  emulator.add_listener("emulator-started", () => {
+    statusEl.textContent = "Running.";
+  });
+
+  document.getElementById("btn_reset").addEventListener("click", () => {
+    emulator.restart();
+    statusEl.textContent = "Restarting…";
+  });
+
+  document.getElementById("btn_fullscreen").addEventListener("click", () => {
+    document.getElementById("screen_container").requestFullscreen();
+  });
+</script>
+
+</body>
+</html>
