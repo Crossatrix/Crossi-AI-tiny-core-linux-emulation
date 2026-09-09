@@ -242,6 +242,32 @@
     statusEl.textContent = "";
   });
 
+  // --- Touch-to-click bridge ---
+  // v86's built-in mouse adapter moves the cursor on touchmove/touchstart,
+  // but only ever sets the actual button-down/up state from real
+  // mousedown/mouseup events - touchstart/touchend never trigger a
+  // "mouse-click" bus event on their own. Without this, tapping only
+  // ever moves the pointer and never registers a click.
+  let touchIsDown = false;
+
+  screenContainer.addEventListener("touchstart", (e) => {
+    if (!emulator.bus || !emulator.mouse_adapter?.enabled) return;
+    touchIsDown = true;
+    emulator.bus.send("mouse-click", [true, false, false]);
+  }, { passive: true });
+
+  screenContainer.addEventListener("touchend", (e) => {
+    if (!emulator.bus || !touchIsDown) return;
+    touchIsDown = false;
+    emulator.bus.send("mouse-click", [false, false, false]);
+  }, { passive: true });
+
+  screenContainer.addEventListener("touchcancel", (e) => {
+    if (!emulator.bus || !touchIsDown) return;
+    touchIsDown = false;
+    emulator.bus.send("mouse-click", [false, false, false]);
+  }, { passive: true });
+
   // If v86 hits a runtime error it usually surfaces via console; we
   // don't have a hook for that here, so leave status visible longer
   // in case something silently fails - remove this line once confirmed working.
