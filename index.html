@@ -259,8 +259,9 @@
   const heldModifiers = new Set();
 
   function dispatchKey(type, code, extraKeys = {}) {
-    // Build a minimal KeyboardEvent-like payload and dispatch it on
-    // document, since v86 listens there by default for keydown/keyup.
+    // v86's built-in keyboard adapter listens on `window`, not
+    // `document`, and reads event.code directly against its own
+    // scancode table - so we dispatch there with a real `code`.
     const ev = new KeyboardEvent(type, {
       code: code,
       key: extraKeys.key || code,
@@ -271,7 +272,13 @@
       altKey: heldModifiers.has("AltLeft") || heldModifiers.has("AltRight"),
       ...extraKeys,
     });
-    document.dispatchEvent(ev);
+    // Some WebKit versions don't set event.code correctly from the
+    // constructor - define it explicitly as a safety net so v86's
+    // `t.code` lookup always sees the right value.
+    try {
+      Object.defineProperty(ev, "code", { value: code, configurable: true });
+    } catch (e) { /* ignore if already correctly set */ }
+    window.dispatchEvent(ev);
   }
 
   document.querySelectorAll(".key").forEach((btn) => {
