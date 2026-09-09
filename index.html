@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>TinyCore Linux</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
 
   html, body {
     margin: 0;
@@ -14,18 +14,15 @@
     height: 100%;
     background: #000;
     overflow: hidden;
-    /* prevent iOS rubber-band scroll / pinch zoom */
     position: fixed;
     overscroll-behavior: none;
-    touch-action: none;
   }
 
   #app {
     display: flex;
     flex-direction: column;
     width: 100%;
-    height: 100%;
-    height: 100dvh; /* modern mobile viewport unit, avoids URL-bar jump */
+    height: 100dvh;
   }
 
   #status {
@@ -36,7 +33,7 @@
     color: #6a6;
     z-index: 20;
     pointer-events: none;
-    opacity: 0.8;
+    opacity: 0.85;
   }
 
   #screen_container {
@@ -46,63 +43,73 @@
     align-items: center;
     justify-content: center;
     background: #000;
-    position: relative;
   }
 
   #screen_container canvas {
     max-width: 100%;
     max-height: 100%;
-    width: auto;
-    height: auto;
     image-rendering: pixelated;
   }
 
-  /* the text-mode fallback layer v86 also creates */
-  #screen_container div {
+  #screen_container > div {
     white-space: pre;
     font: 14px monospace;
     color: #0f0;
     line-height: 1.15;
   }
 
-  /* Hidden input used purely to summon the mobile OS keyboard.
-     Must stay in the DOM and be a real focusable input, but kept
-     visually invisible and non-interactive to layout. */
-  #kbd_trap {
-    position: absolute;
-    opacity: 0;
-    height: 1px;
-    width: 1px;
-    top: -100px;
-    left: 0;
-    pointer-events: none;
-    font-size: 16px; /* prevents iOS auto-zoom-on-focus */
+  /* --- On-screen keyboard --- */
+  #kbd {
+    flex: 0 0 auto;
+    background: #161616;
+    border-top: 1px solid #2a2a2a;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px)) 4px;
+    display: none;
   }
+  #kbd.visible { display: block; }
 
-  /* Bottom bar: only appears to toggle the keyboard, nothing else */
-  #kbd_bar {
+  #kbd_toggle_bar {
     flex: 0 0 auto;
     display: flex;
-    align-items: center;
-    justify-content: center;
     background: #111;
-    border-top: 1px solid #222;
-    padding: env(safe-area-inset-bottom, 0) 0 0 0;
   }
-
   #kbd_toggle {
-    width: 100%;
-    padding: 10px 0;
+    flex: 1;
+    padding: 8px 0;
     background: #111;
     color: #7fd67f;
     border: none;
-    font: 13px monospace;
+    font: 12px monospace;
     letter-spacing: 0.5px;
   }
+  #kbd_toggle:active { background: #1a1a1a; }
 
-  #kbd_toggle:active {
-    background: #1a1a1a;
+  .kbd_row {
+    display: flex;
+    gap: 3px;
+    margin-bottom: 3px;
   }
+  .kbd_row:last-child { margin-bottom: 0; }
+
+  .key {
+    flex: 1;
+    background: #262626;
+    color: #eee;
+    border: 1px solid #363636;
+    border-radius: 4px;
+    font: 12px monospace;
+    padding: 8px 0;
+    text-align: center;
+    min-width: 0;
+  }
+  .key:active, .key.active {
+    background: #3a5a3a;
+    border-color: #4a7a4a;
+  }
+  .key.wide  { flex: 1.6; }
+  .key.wider { flex: 2.2; }
+  .key.space { flex: 6; }
+  .key.mod   { color: #7fd67f; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -111,30 +118,122 @@
   <div id="screen_container">
     <div id="status">Loading…</div>
   </div>
-  <div id="kbd_bar">
+
+  <div id="kbd_toggle_bar">
     <button id="kbd_toggle">⌨ Show Keyboard</button>
   </div>
-</div>
 
-<input id="kbd_trap" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" />
+  <div id="kbd">
+    <div class="kbd_row">
+      <button class="key" data-code="Escape">Esc</button>
+      <button class="key" data-code="Digit1">1</button>
+      <button class="key" data-code="Digit2">2</button>
+      <button class="key" data-code="Digit3">3</button>
+      <button class="key" data-code="Digit4">4</button>
+      <button class="key" data-code="Digit5">5</button>
+      <button class="key" data-code="Digit6">6</button>
+      <button class="key" data-code="Digit7">7</button>
+      <button class="key" data-code="Digit8">8</button>
+      <button class="key" data-code="Digit9">9</button>
+      <button class="key" data-code="Digit0">0</button>
+      <button class="key" data-code="Minus">-</button>
+      <button class="key" data-code="Equal">=</button>
+      <button class="key wide" data-code="Backspace">⌫</button>
+    </div>
+    <div class="kbd_row">
+      <button class="key wide" data-code="Tab">Tab</button>
+      <button class="key" data-code="KeyQ">q</button>
+      <button class="key" data-code="KeyW">w</button>
+      <button class="key" data-code="KeyE">e</button>
+      <button class="key" data-code="KeyR">r</button>
+      <button class="key" data-code="KeyT">t</button>
+      <button class="key" data-code="KeyY">y</button>
+      <button class="key" data-code="KeyU">u</button>
+      <button class="key" data-code="KeyI">i</button>
+      <button class="key" data-code="KeyO">o</button>
+      <button class="key" data-code="KeyP">p</button>
+      <button class="key" data-code="BracketLeft">[</button>
+      <button class="key" data-code="BracketRight">]</button>
+    </div>
+    <div class="kbd_row">
+      <button class="key mod wider" data-code="CapsLock" data-lock="1">Caps</button>
+      <button class="key" data-code="KeyA">a</button>
+      <button class="key" data-code="KeyS">s</button>
+      <button class="key" data-code="KeyD">d</button>
+      <button class="key" data-code="KeyF">f</button>
+      <button class="key" data-code="KeyG">g</button>
+      <button class="key" data-code="KeyH">h</button>
+      <button class="key" data-code="KeyJ">j</button>
+      <button class="key" data-code="KeyK">k</button>
+      <button class="key" data-code="KeyL">l</button>
+      <button class="key" data-code="Semicolon">;</button>
+      <button class="key" data-code="Quote">'</button>
+      <button class="key wide" data-code="Enter">Enter</button>
+    </div>
+    <div class="kbd_row">
+      <button class="key mod wider" data-code="ShiftLeft" data-lock="1">Shift</button>
+      <button class="key" data-code="KeyZ">z</button>
+      <button class="key" data-code="KeyX">x</button>
+      <button class="key" data-code="KeyC">c</button>
+      <button class="key" data-code="KeyV">v</button>
+      <button class="key" data-code="KeyB">b</button>
+      <button class="key" data-code="KeyN">n</button>
+      <button class="key" data-code="KeyM">m</button>
+      <button class="key" data-code="Comma">,</button>
+      <button class="key" data-code="Period">.</button>
+      <button class="key" data-code="Slash">/</button>
+      <button class="key mod wider" data-code="ShiftRight" data-lock="1">Shift</button>
+    </div>
+    <div class="kbd_row">
+      <button class="key mod" data-code="ControlLeft" data-lock="1">Ctrl</button>
+      <button class="key mod" data-code="AltLeft" data-lock="1">Alt</button>
+      <button class="key space" data-code="Space">Space</button>
+      <button class="key mod" data-code="AltRight" data-lock="1">Alt</button>
+      <button class="key mod" data-code="ArrowLeft">◀</button>
+      <button class="key mod" data-code="ArrowUp">▲</button>
+      <button class="key mod" data-code="ArrowDown">▼</button>
+      <button class="key mod" data-code="ArrowRight">▶</button>
+    </div>
+    <div class="kbd_row">
+      <button class="key mod" data-code="F1">F1</button>
+      <button class="key mod" data-code="F2">F2</button>
+      <button class="key mod" data-code="F3">F3</button>
+      <button class="key mod" data-code="F4">F4</button>
+      <button class="key mod" data-code="F5">F5</button>
+      <button class="key mod" data-code="F6">F6</button>
+      <button class="key mod" data-code="F7">F7</button>
+      <button class="key mod" data-code="F8">F8</button>
+      <button class="key mod" data-code="F9">F9</button>
+      <button class="key mod" data-code="F10">F10</button>
+      <button class="key mod" data-code="F11">F11</button>
+      <button class="key mod" data-code="F12">F12</button>
+    </div>
+  </div>
+</div>
 
 <script src="libv86.js"></script>
 <script>
   const statusEl = document.getElementById("status");
-  const kbdTrap = document.getElementById("kbd_trap");
-  const kbdToggle = document.getElementById("kbd_toggle");
   const screenContainer = document.getElementById("screen_container");
+  const kbdToggle = document.getElementById("kbd_toggle");
+  const kbdPanel = document.getElementById("kbd");
 
-  const emulator = new V86({
-    wasm_path: "v86.wasm",
-    screen_container: screenContainer,
-    bios: { url: "seabios.bin" },
-    vga_bios: { url: "vgabios.bin" },
-    cdrom: { url: "tinycore.iso" },
-    autostart: true,
-    memory_size: 128 * 1024 * 1024,
-    vga_memory_size: 8 * 1024 * 1024,
-  });
+  let emulator;
+  try {
+    emulator = new V86({
+      wasm_path: "v86.wasm",
+      screen_container: screenContainer,
+      bios: { url: "seabios.bin" },
+      vga_bios: { url: "vgabios.bin" },
+      cdrom: { url: "tinycore.iso" },
+      autostart: true,
+      memory_size: 128 * 1024 * 1024,
+      vga_memory_size: 8 * 1024 * 1024,
+    });
+  } catch (err) {
+    statusEl.textContent = "Emulator init failed: " + err.message;
+    throw err;
+  }
 
   emulator.add_listener("emulator-ready", () => {
     statusEl.textContent = "Booting…";
@@ -144,96 +243,77 @@
     statusEl.textContent = "";
   });
 
-  // --- Virtual keyboard wiring ---
-  // Tapping the screen or the keyboard-toggle button focuses the hidden
-  // input, which triggers the native mobile keyboard. Keystrokes are
-  // forwarded into v86's keyboard handling via its bus.
+  // If v86 hits a runtime error it usually surfaces via console; we
+  // don't have a hook for that here, so leave status visible longer
+  // in case something silently fails - remove this line once confirmed working.
 
-  let keyboardVisible = false;
-
-  function showKeyboard() {
-    kbdTrap.value = "";
-    kbdTrap.focus();
-    keyboardVisible = true;
-    kbdToggle.textContent = "⌨ Hide Keyboard";
-  }
-
-  function hideKeyboard() {
-    kbdTrap.blur();
-    keyboardVisible = false;
-    kbdToggle.textContent = "⌨ Show Keyboard";
-  }
-
+  // --- Keyboard toggle ---
   kbdToggle.addEventListener("click", () => {
-    if (keyboardVisible) hideKeyboard();
-    else showKeyboard();
+    kbdPanel.classList.toggle("visible");
+    kbdToggle.textContent = kbdPanel.classList.contains("visible")
+      ? "⌨ Hide Keyboard"
+      : "⌨ Show Keyboard";
   });
 
-  // Tapping anywhere on the emulator screen also brings up the keyboard,
-  // matching expected mobile behavior (tap-to-type).
-  screenContainer.addEventListener("click", () => {
-    showKeyboard();
-  });
+  // --- Sticky modifier state ---
+  const stickyKeys = ["ShiftLeft", "ShiftRight", "ControlLeft", "AltLeft", "AltRight", "CapsLock"];
+  const heldModifiers = new Set();
 
-  kbdTrap.addEventListener("blur", () => {
-    keyboardVisible = false;
-    kbdToggle.textContent = "⌨ Show Keyboard";
-  });
+  function dispatchKey(type, code, extraKeys = {}) {
+    // Build a minimal KeyboardEvent-like payload and dispatch it on
+    // document, since v86 listens there by default for keydown/keyup.
+    const ev = new KeyboardEvent(type, {
+      code: code,
+      key: extraKeys.key || code,
+      bubbles: true,
+      cancelable: true,
+      shiftKey: heldModifiers.has("ShiftLeft") || heldModifiers.has("ShiftRight"),
+      ctrlKey: heldModifiers.has("ControlLeft"),
+      altKey: heldModifiers.has("AltLeft") || heldModifiers.has("AltRight"),
+      ...extraKeys,
+    });
+    document.dispatchEvent(ev);
+  }
 
-  // Forward real key events (works for hardware & most soft keyboards
-  // that emit proper keydown/keyup, e.g. iPad's floating/hardware kbd).
-  kbdTrap.addEventListener("keydown", (e) => {
-    emulator.keyboard_send_keys && emulator.bus.send("keyboard-code", e);
-  });
+  document.querySelectorAll(".key").forEach((btn) => {
+    const code = btn.dataset.code;
+    const isSticky = btn.dataset.lock === "1";
 
-  // Forward via v86's built-in DOM key capture as the primary path —
-  // v86 already listens on document for keydown/keyup by default when
-  // no custom keyboard adapter is set, so focusing kbd_trap is often
-  // enough on its own. The explicit "input" handler below is a fallback
-  // for soft keyboards (notably iOS) that sometimes only fire composition
-  // /input events rather than full keydown events for certain keys.
-  let lastValue = "";
-  kbdTrap.addEventListener("input", (e) => {
-    const val = kbdTrap.value;
-    if (val.length > lastValue.length) {
-      const added = val.slice(lastValue.length);
-      for (const ch of added) {
-        emulator.keyboard_send_text(ch);
-      }
-    } else if (val.length < lastValue.length) {
-      // backspace pressed on soft keyboard
-      emulator.keyboard_send_text("\x08");
-    }
-    lastValue = val;
-    // reset periodically to avoid unbounded growth
-    if (val.length > 500) {
-      kbdTrap.value = "";
-      lastValue = "";
-    }
-  });
+    if (isSticky) {
+      btn.addEventListener("click", () => {
+        if (heldModifiers.has(code)) {
+          heldModifiers.delete(code);
+          btn.classList.remove("active");
+          dispatchKey("keyup", code);
+        } else {
+          heldModifiers.add(code);
+          btn.classList.add("active");
+          dispatchKey("keydown", code);
+        }
+      });
+    } else {
+      btn.addEventListener("click", () => {
+        dispatchKey("keydown", code);
+        // brief delay so v86 registers a distinct press before release
+        setTimeout(() => dispatchKey("keyup", code), 40);
 
-  // Enter key from soft keyboards (fires as a change/keydown depending
-  // on platform; keydown above already covers hardware keyboards).
-  kbdTrap.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      emulator.keyboard_send_text("\n");
-      e.preventDefault();
-      kbdTrap.value = "";
-      lastValue = "";
-    }
-    if (e.key === "Backspace") {
-      // handled by input listener too, but ensure it fires even if
-      // value was already empty (input event wouldn't fire then)
-      if (kbdTrap.value === "") {
-        emulator.keyboard_send_text("\x08");
-      }
+        // auto-release non-Ctrl/Alt one-shot modifiers after a normal
+        // key press, mimicking typical mobile "sticky shift" behavior
+        for (const mod of [...heldModifiers]) {
+          if (mod.startsWith("Shift")) {
+            heldModifiers.delete(mod);
+            document.querySelector(`.key[data-code="${mod}"]`)?.classList.remove("active");
+            dispatchKey("keyup", mod);
+          }
+        }
+      });
     }
   });
 
-  // Prevent iOS Safari's bounce/zoom gestures from interfering with taps
+  // Prevent iOS bounce/zoom from interfering with taps
   document.addEventListener("gesturestart", (e) => e.preventDefault());
   document.addEventListener("touchmove", (e) => {
-    if (e.scale !== 1) e.preventDefault();
+    if (e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 </script>
 
