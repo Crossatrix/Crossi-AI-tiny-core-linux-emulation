@@ -162,9 +162,140 @@
     background: #3a5a3a;
     border-color: #4a7a4a;
   }
+
+  /* --- AI chat panel --- */
+  #chat_toggle {
+    position: fixed;
+    top: 6px;
+    right: 8px;
+    z-index: 30;
+    background: #191919;
+    color: #7fd67f;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font: 11px monospace;
+    padding: 6px 10px;
+  }
+  #chat_toggle:active { background: #222; }
+
+  #chat_panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    height: 100dvh;
+    width: min(360px, 92vw);
+    background: #131313;
+    border-left: 1px solid #2a2a2a;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+  }
+  #chat_panel.open { transform: translateX(0); }
+
+  #chat_header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #7fd67f;
+    font: 12px monospace;
+  }
+  #chat_close {
+    background: none;
+    border: none;
+    color: #888;
+    font: 16px monospace;
+    line-height: 1;
+    padding: 2px 6px;
+  }
+
+  #chat_messages {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .chat_msg {
+    max-width: 88%;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font: 12.5px/1.4 monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chat_msg.user {
+    align-self: flex-end;
+    background: #24422c;
+    color: #dfe;
+  }
+  .chat_msg.ai {
+    align-self: flex-start;
+    background: #202020;
+    color: #ddd;
+  }
+  .chat_msg.system {
+    align-self: center;
+    background: none;
+    color: #777;
+    font-size: 11px;
+  }
+  .chat_actions_note {
+    display: block;
+    margin-top: 4px;
+    color: #6a6;
+    font-size: 10.5px;
+  }
+
+  #chat_input_row {
+    flex: 0 0 auto;
+    display: flex;
+    border-top: 1px solid #2a2a2a;
+    padding: env(safe-area-inset-bottom, 0) 0 0 0;
+  }
+  #chat_input {
+    flex: 1;
+    background: #191919;
+    color: #eee;
+    border: none;
+    padding: 10px;
+    font: 12.5px monospace;
+    resize: none;
+    height: 42px;
+  }
+  #chat_send {
+    flex: 0 0 60px;
+    background: #1c2e1f;
+    color: #7fd67f;
+    border: none;
+    font: 12px monospace;
+  }
+  #chat_send:active { background: #25402a; }
+  #chat_send:disabled { color: #555; }
 </style>
 </head>
 <body>
+
+<button id="chat_toggle">💬 AI</button>
+
+<div id="chat_panel">
+  <div id="chat_header">
+    <span>AI Assistant</span>
+    <button id="chat_close">✕</button>
+  </div>
+  <div id="chat_messages"></div>
+  <div id="chat_input_row">
+    <textarea id="chat_input" placeholder="Ask the AI…"></textarea>
+    <button id="chat_send">Send</button>
+  </div>
+</div>
 
 <div id="app">
   <div id="status">Loading…</div>
@@ -529,6 +660,169 @@
   document.addEventListener("touchmove", (e) => {
     if (e.touches.length > 1) e.preventDefault();
   }, { passive: false });
+
+  // ============================================================
+  // AI CHAT PANEL
+  // ============================================================
+
+  const AI_API_KEY = "cax_858717c93c6c46ceb288a7f3567b2059";
+  const AI_MODEL = "Crossi_6.0_OSUSE";
+  const AI_ENDPOINT = "https://hqibtbdovjcocqgwqwbw.supabase.co/functions/v1/public-api";
+
+  const chatToggle = document.getElementById("chat_toggle");
+  const chatPanel = document.getElementById("chat_panel");
+  const chatClose = document.getElementById("chat_close");
+  const chatMessages = document.getElementById("chat_messages");
+  const chatInput = document.getElementById("chat_input");
+  const chatSend = document.getElementById("chat_send");
+
+  chatToggle.addEventListener("click", () => chatPanel.classList.add("open"));
+  chatClose.addEventListener("click", () => chatPanel.classList.remove("open"));
+
+  function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+  function appendChatMessage(role, text, actionsNote) {
+    const div = document.createElement("div");
+    div.className = "chat_msg " + role;
+    div.textContent = text;
+    if (actionsNote) {
+      const note = document.createElement("span");
+      note.className = "chat_actions_note";
+      note.textContent = actionsNote;
+      div.appendChild(note);
+    }
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
+  }
+
+  // Maps a <key>"..."</key> name (a character or a named key like
+  // "Enter", "Tab", "F5", "ArrowUp") to one of our existing SCANCODES
+  // entries, then presses it the same way the on-screen keyboard does.
+  const NAMED_KEY_MAP = {
+    enter: "Enter", return: "Enter", tab: "Tab", esc: "Escape", escape: "Escape",
+    backspace: "Backspace", space: "Space", up: "ArrowUp", down: "ArrowDown",
+    left: "ArrowLeft", right: "ArrowRight", arrowup: "ArrowUp", arrowdown: "ArrowDown",
+    arrowleft: "ArrowLeft", arrowright: "ArrowRight", ctrl: "ControlLeft",
+    control: "ControlLeft", alt: "AltLeft", shift: "ShiftLeft", capslock: "CapsLock",
+    delete: "Delete", del: "Delete", home: "Home", end: "End",
+    pageup: "PageUp", pagedown: "PageDown", insert: "Insert",
+    "-": "Minus", "_": "Minus", "=": "Equal", "+": "Equal",
+    "[": "BracketLeft", "]": "BracketRight", ";": "Semicolon", "'": "Quote",
+    ",": "Comma", ".": "Period", "/": "Slash", "\\": "Backslash", "`": "Backquote",
+    "~": "Backquote",
+  };
+
+  function resolveKeyCode(name) {
+    const n = String(name).trim();
+    const lower = n.toLowerCase();
+    if (/^f([1-9]|1[0-2])$/.test(lower)) return "F" + lower.slice(1); // f1-f12
+    if (NAMED_KEY_MAP[lower]) return NAMED_KEY_MAP[lower];
+    if (/^[a-z]$/i.test(n)) return "Key" + n.toUpperCase();
+    if (/^[0-9]$/.test(n)) return "Digit" + n;
+    return null;
+  }
+
+  async function pressNamedKey(name) {
+    const code = resolveKeyCode(name);
+    if (!code) { console.log("AI: unrecognized key name:", name); return; }
+    keyDown(code);
+    await sleep(40);
+    keyUp(code);
+  }
+
+  async function aiClick() {
+    if (!emulator.bus) return;
+    emulator.bus.send("mouse-click", [true, false, false]);
+    await sleep(60);
+    emulator.bus.send("mouse-click", [false, false, false]);
+  }
+
+  function aiMove(dx, dy) {
+    if (!emulator.bus) return;
+    emulator.bus.send("mouse-delta", [dx, -dy]);
+  }
+
+  // Parses <key>"..."</key>, <text>"..."</text>, <move>"dx,dy"</move>,
+  // and <click/> tags out of the AI's reply and runs them in order,
+  // with a small pause between each so the guest OS can keep up.
+  async function runAiActions(replyText) {
+    const tagRegex = /<key>"(.*?)"<\/key>|<text>"([\s\S]*?)"<\/text>|<move>"(.*?)"<\/move>|<click\s*\/>/g;
+    let match;
+    let count = 0;
+    while ((match = tagRegex.exec(replyText)) !== null) {
+      if (match[1] !== undefined) {
+        await pressNamedKey(match[1]);
+      } else if (match[2] !== undefined) {
+        await emulator.keyboard_send_text(match[2]);
+      } else if (match[3] !== undefined) {
+        const parts = match[3].split(",").map((s) => parseInt(s.trim(), 10) || 0);
+        aiMove(parts[0] || 0, parts[1] || 0);
+      } else {
+        await aiClick();
+      }
+      count++;
+      await sleep(80);
+    }
+    return count;
+  }
+
+  async function callAi(prompt) {
+    const url = `${AI_ENDPOINT}?key=${encodeURIComponent(AI_API_KEY)}&model=${encodeURIComponent(AI_MODEL)}&prompt=${encodeURIComponent(prompt)}`;
+    const res = await fetch(url);
+    const raw = await res.text();
+    let content = raw;
+    try {
+      const json = JSON.parse(raw);
+      content = json.response ?? json.result ?? json.text ?? json.message ?? json.reply ?? raw;
+    } catch (e) {
+      // not JSON - use raw text response as-is
+    }
+    return String(content);
+  }
+
+  async function sendChatMessage() {
+    const prompt = chatInput.value.trim();
+    if (!prompt) return;
+    chatInput.value = "";
+    chatSend.disabled = true;
+    appendChatMessage("user", prompt);
+    const pending = appendChatMessage("ai", "…");
+
+    try {
+      const reply = await callAi(prompt);
+      // Strip action tags out of the displayed text so the chat log
+      // stays readable; the tags themselves still get executed below.
+      const displayText = reply
+        .replace(/<key>"(.*?)"<\/key>/g, "")
+        .replace(/<text>"([\s\S]*?)"<\/text>/g, "")
+        .replace(/<move>"(.*?)"<\/move>/g, "")
+        .replace(/<click\s*\/>/g, "")
+        .trim();
+
+      pending.textContent = displayText || "(no reply text)";
+
+      const actionCount = await runAiActions(reply);
+      if (actionCount > 0) {
+        const note = document.createElement("span");
+        note.className = "chat_actions_note";
+        note.textContent = `Performed ${actionCount} action${actionCount === 1 ? "" : "s"} in the emulator.`;
+        pending.appendChild(note);
+      }
+    } catch (err) {
+      pending.textContent = "Error reaching AI: " + err.message;
+    } finally {
+      chatSend.disabled = false;
+    }
+  }
+
+  chatSend.addEventListener("click", sendChatMessage);
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
 </script>
 
 </body>
