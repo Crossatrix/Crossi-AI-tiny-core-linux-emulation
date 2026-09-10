@@ -1,4 +1,4 @@
-  <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -84,6 +84,18 @@
   }
   #kbd_toggle:active { background: #1a1a1a; }
 
+  #btn_paste {
+    flex: 0 0 90px;
+    padding: 8px 0;
+    background: #111;
+    color: #7fd67f;
+    border: none;
+    border-left: 1px solid #2a2a2a;
+    font: 12px monospace;
+    letter-spacing: 0.5px;
+  }
+  #btn_paste:active { background: #1a1a1a; }
+
   .kbd_row {
     display: flex;
     gap: 3px;
@@ -166,6 +178,7 @@
 
   <div id="kbd_toggle_bar">
     <button id="kbd_toggle">⌨ Show Keyboard</button>
+    <button id="btn_paste">📋 Paste</button>
   </div>
 
   <div id="kbd">
@@ -363,6 +376,33 @@
     kbdToggle.textContent = kbdPanel.classList.contains("visible")
       ? "⌨ Hide Keyboard"
       : "⌨ Show Keyboard";
+  });
+
+  // --- Paste from system clipboard ---
+  // Reads the device clipboard and types it into the guest OS using
+  // v86's own keyboard_send_text(), which simulates each character as
+  // a real keypress internally - so it works regardless of what's
+  // focused inside the guest (terminal, text field, etc).
+  const btnPaste = document.getElementById("btn_paste");
+  btnPaste.addEventListener("click", async () => {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      statusEl.textContent = "Clipboard access not supported in this browser.";
+      setTimeout(() => (statusEl.textContent = ""), 3000);
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      btnPaste.textContent = "…";
+      await emulator.keyboard_send_text(text);
+      btnPaste.textContent = "📋 Paste";
+    } catch (err) {
+      // Most likely a permissions prompt was denied, or the page
+      // isn't focused/HTTPS - clipboard reads require both.
+      statusEl.textContent = "Clipboard permission denied.";
+      btnPaste.textContent = "📋 Paste";
+      setTimeout(() => (statusEl.textContent = ""), 3000);
+    }
   });
 
   // --- Real PS/2 scancode table, extracted from v86's own keyboard
