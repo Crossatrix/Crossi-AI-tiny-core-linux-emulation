@@ -750,7 +750,7 @@
   // AI CHAT PANEL
   // ============================================================
 
-  const AI_API_KEY = "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";
+  const AI_API_KEY = "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";
   const AI_MODEL = "nex-agi/nex-n2.5-mini:free";
   const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -867,7 +867,7 @@
   // with a 300ms pause between each so the guest OS reliably registers
   // each action before the next one fires - important when a move is
   // immediately followed by a click, or a key press by another key press.
-  const AI_ACTION_DELAY_MS = 300;
+  const AI_ACTION_DELAY_MS = 500;
 
   async function runAiActions(replyText) {
     const tagRegex = /<key>"(.*?)"<\/key>|<text>"([\s\S]*?)"<\/text>|<move>"(.*?)"<\/move>|<click\s*\/>/g;
