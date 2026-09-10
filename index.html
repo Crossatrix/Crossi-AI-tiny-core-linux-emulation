@@ -665,9 +665,9 @@
   // AI CHAT PANEL
   // ============================================================
 
-  const AI_API_KEY = "cax_858717c93c6c46ceb288a7f3567b2059";
-  const AI_MODEL = "Crossi_6.0_OSUSE";
-  const AI_ENDPOINT = "https://hqibtbdovjcocqgwqwbw.supabase.co/functions/v1/public-api";
+  const AI_API_KEY = "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";
+  const AI_MODEL = "nex-agi/nex-n2.5-mini:free";
+  const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
   const chatToggle = document.getElementById("chat_toggle");
   const chatPanel = document.getElementById("chat_panel");
@@ -767,17 +767,51 @@
     return count;
   }
 
+  // Keeps the running conversation so the AI has context across turns.
+  const chatHistory = [
+    {
+      role: "system",
+      content:
+        "You are an AI assistant that can control a virtual computer running TinyCore Linux inside a web page. " +
+        "To perform actions, include these tags anywhere in your reply: " +
+        '<key>"a"</key> presses a single key (letters, digits, or names like Enter, Tab, Escape, Backspace, ArrowUp, F5, etc). ' +
+        '<text>"hello world"</text> types out literal text. ' +
+        '<move>"dx,dy"</move> moves the mouse cursor by a relative pixel offset. ' +
+        "<click/> performs a left mouse click at the current cursor position. " +
+        "You can include multiple tags in one reply and they will run in order. " +
+        "Write a short natural-language reply explaining what you're doing, and include the tags for any actions you want performed.",
+    },
+  ];
+
   async function callAi(prompt) {
-    const url = `${AI_ENDPOINT}?key=${encodeURIComponent(AI_API_KEY)}&model=${encodeURIComponent(AI_MODEL)}&prompt=${encodeURIComponent(prompt)}`;
-    const res = await fetch(url);
+    chatHistory.push({ role: "user", content: prompt });
+
+    const res = await fetch(AI_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${AI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages: chatHistory,
+      }),
+    });
+
     const raw = await res.text();
-    let content = raw;
+    let content;
     try {
       const json = JSON.parse(raw);
-      content = json.response ?? json.result ?? json.text ?? json.message ?? json.reply ?? raw;
+      if (json.error) {
+        throw new Error(json.error.message || JSON.stringify(json.error));
+      }
+      content = json.choices?.[0]?.message?.content ?? raw;
     } catch (e) {
-      // not JSON - use raw text response as-is
+      if (e.message && e.message !== raw) throw e; // real API error, surface it
+      content = raw; // not JSON, use as-is
     }
+
+    chatHistory.push({ role: "assistant", content: String(content) });
     return String(content);
   }
 
