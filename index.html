@@ -96,6 +96,39 @@
   }
   #btn_paste:active { background: #1a1a1a; }
 
+  #btn_upload {
+    flex: 0 0 90px;
+    padding: 8px 0;
+    background: #111;
+    color: #7fd67f;
+    border: none;
+    border-left: 1px solid #2a2a2a;
+    font: 12px monospace;
+    letter-spacing: 0.5px;
+  }
+  #btn_upload:active { background: #1a1a1a; }
+  #btn_upload:disabled { color: #555; }
+
+  #state_bar {
+    flex: 0 0 auto;
+    display: flex;
+    background: #111;
+    border-top: 1px solid #222;
+  }
+  #state_bar button {
+    flex: 1;
+    padding: 7px 0;
+    background: #111;
+    color: #7fd67f;
+    border: none;
+    border-right: 1px solid #2a2a2a;
+    font: 11px monospace;
+  }
+  #state_bar button:last-child { border-right: none; }
+  #state_bar button:active { background: #1a1a1a; }
+  #state_bar button:disabled { color: #555; }
+  #btn_clear_state { color: #a55; flex: 0 0 44px; }
+
   .kbd_row {
     display: flex;
     gap: 3px;
@@ -395,6 +428,14 @@
   <div id="kbd_toggle_bar">
     <button id="kbd_toggle">⌨ Show Keyboard</button>
     <button id="btn_paste">📋 Paste</button>
+    <button id="btn_upload">📁 Upload</button>
+    <input type="file" id="file_input" multiple style="display:none;" />
+  </div>
+
+  <div id="state_bar">
+    <button id="btn_save_state">💾 Save State</button>
+    <button id="btn_load_state">⏏ Reload Saved</button>
+    <button id="btn_clear_state">🗑</button>
   </div>
 
   <div id="kbd">
@@ -494,6 +535,58 @@
   const kbdToggle = document.getElementById("kbd_toggle");
   const kbdPanel = document.getElementById("kbd");
 
+  // ============================================================
+  // IndexedDB storage for full VM snapshots
+  // ============================================================
+  const SNAPSHOT_DB_NAME = "tinycore_vm_snapshots";
+  const SNAPSHOT_STORE = "snapshots";
+  const SNAPSHOT_KEY = "latest"; // single-slot save for now
+
+  function openSnapshotDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(SNAPSHOT_DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore(SNAPSHOT_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveSnapshotToDB(arrayBuffer) {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
+      tx.objectStore(SNAPSHOT_STORE).put(arrayBuffer, SNAPSHOT_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function loadSnapshotFromDB() {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SNAPSHOT_STORE, "readonly");
+      const req = tx.objectStore(SNAPSHOT_STORE).get(SNAPSHOT_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function deleteSnapshotFromDB() {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
+      tx.objectStore(SNAPSHOT_STORE).delete(SNAPSHOT_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // ============================================================
+  // Emulator setup - autostart is off so we can check for a saved
+  // snapshot first and restore into it instead of always booting fresh.
+  // ============================================================
   let emulator;
   try {
     emulator = new V86({
@@ -502,10 +595,11 @@
       bios: { url: "seabios.bin" },
       vga_bios: { url: "vgabios.bin" },
       cdrom: { url: "tinycore.iso" },
-      autostart: true,
+      autostart: false,
       memory_size: 128 * 1024 * 1024,
       vga_memory_size: 8 * 1024 * 1024,
       network_relay_url: "wss://relay.widgetry.org/",
+      filesystem: {}, // empty writable 9p share - required for emulator.create_file() to work
     });
   } catch (err) {
     statusEl.textContent = "Emulator init failed: " + err.message;
@@ -519,6 +613,21 @@
   emulator.add_listener("emulator-started", () => {
     statusEl.textContent = "";
   });
+
+  (async () => {
+    try {
+      const saved = await loadSnapshotFromDB();
+      if (saved) {
+        statusEl.textContent = "Restoring saved state…";
+        await emulator.restore_state(saved);
+        statusEl.textContent = "";
+      }
+    } catch (err) {
+      console.log("Snapshot restore failed, booting fresh:", err);
+      statusEl.textContent = "";
+    }
+    emulator.run();
+  })();
 
   // --- Block direct screen touches from reaching v86's own touch
   // handling. v86 listens on `window` for touchstart/touchmove/touchend
@@ -621,7 +730,104 @@
     }
   });
 
-  // --- Real PS/2 scancode table, extracted from v86's own keyboard
+  // --- Upload files into the guest ---
+  // Uses v86's built-in create_file(path, Uint8Array) to write into the
+  // 9p virtual filesystem configured above. Files land at /files/<name>
+  // inside that share - the guest still needs to mount host9p (tag is
+  // fixed by v86 and can't be renamed) to actually see them, e.g.:
+  //   mount -t 9p host9p /mnt -o trans=virtio
+  // See the auto-mount boot script provided separately for making this
+  // happen automatically and placing files under /home/tc/uploads.
+  const btnUpload = document.getElementById("btn_upload");
+  const fileInput = document.getElementById("file_input");
+
+  btnUpload.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async () => {
+    const files = Array.from(fileInput.files || []);
+    if (files.length === 0) return;
+
+    btnUpload.disabled = true;
+    const originalLabel = btnUpload.textContent;
+
+    for (const file of files) {
+      try {
+        btnUpload.textContent = `…${file.name}`;
+        const buf = new Uint8Array(await file.arrayBuffer());
+        await emulator.create_file("/files/" + file.name, buf);
+      } catch (err) {
+        statusEl.textContent = "Upload failed: " + file.name + " (" + err.message + ")";
+        setTimeout(() => (statusEl.textContent = ""), 3500);
+      }
+    }
+
+    btnUpload.textContent = originalLabel;
+    btnUpload.disabled = false;
+    fileInput.value = ""; // allow re-selecting the same file later
+  });
+
+  // --- Save / Load / Clear full VM state (IndexedDB) ---
+  // emulator.save_state() captures the entire machine - CPU, RAM, disk,
+  // and the 9p filesystem - as one binary blob. This can be tens of MB,
+  // so it's a manual action rather than something run automatically.
+  const btnSaveState = document.getElementById("btn_save_state");
+  const btnLoadState = document.getElementById("btn_load_state");
+  const btnClearState = document.getElementById("btn_clear_state");
+
+  function showStateStatus(msg, ms = 2500) {
+    statusEl.textContent = msg;
+    if (ms) setTimeout(() => (statusEl.textContent = ""), ms);
+  }
+
+  btnSaveState.addEventListener("click", async () => {
+    btnSaveState.disabled = true;
+    const original = btnSaveState.textContent;
+    try {
+      btnSaveState.textContent = "Saving…";
+      const state = await emulator.save_state();
+      await saveSnapshotToDB(state);
+      const sizeMB = (state.byteLength / (1024 * 1024)).toFixed(1);
+      showStateStatus(`Saved (${sizeMB} MB). Will auto-restore next time this page loads.`, 4000);
+    } catch (err) {
+      showStateStatus("Save failed: " + err.message, 4000);
+    } finally {
+      btnSaveState.textContent = original;
+      btnSaveState.disabled = false;
+    }
+  });
+
+  btnLoadState.addEventListener("click", async () => {
+    btnLoadState.disabled = true;
+    const original = btnLoadState.textContent;
+    try {
+      const saved = await loadSnapshotFromDB();
+      if (!saved) {
+        showStateStatus("No saved state found.");
+        return;
+      }
+      btnLoadState.textContent = "Loading…";
+      await emulator.restore_state(saved);
+      showStateStatus("State reloaded.");
+    } catch (err) {
+      showStateStatus("Load failed: " + err.message, 4000);
+    } finally {
+      btnLoadState.textContent = original;
+      btnLoadState.disabled = false;
+    }
+  });
+
+  btnClearState.addEventListener("click", async () => {
+    if (!confirm("Delete the saved VM snapshot? This can't be undone.")) return;
+    try {
+      await deleteSnapshotFromDB();
+      showStateStatus("Saved state cleared.");
+    } catch (err) {
+      showStateStatus("Clear failed: " + err.message, 4000);
+    }
+  });
+
+
+
   // adapter (the `w` map inside libv86.js). Values >255 are extended
   // (0xE0-prefixed) scancodes - encoded as two bytes below, exactly
   // like v86's internal m()/l() functions do.
