@@ -279,6 +279,53 @@
   }
   #chat_send:active { background: #25402a; }
   #chat_send:disabled { color: #555; }
+
+  #chat_toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid #2a2a2a;
+  }
+  #btn_screenshot {
+    background: #191919;
+    color: #7fd67f;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font: 11px monospace;
+  }
+  #btn_screenshot:active { background: #222; }
+
+  #screenshot_preview {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font: 10.5px monospace;
+    color: #888;
+  }
+  #screenshot_preview.attached { display: flex; }
+  #screenshot_preview img {
+    height: 34px;
+    border: 1px solid #333;
+    border-radius: 3px;
+  }
+  #screenshot_remove {
+    background: none;
+    border: none;
+    color: #a55;
+    font: 13px monospace;
+    padding: 0 4px;
+  }
+
+  .chat_msg img.attached_shot {
+    display: block;
+    max-width: 100%;
+    border-radius: 5px;
+    margin-top: 6px;
+    border: 1px solid #333;
+  }
 </style>
 </head>
 <body>
@@ -291,6 +338,14 @@
     <button id="chat_close">✕</button>
   </div>
   <div id="chat_messages"></div>
+  <div id="chat_toolbar">
+    <button id="btn_screenshot">📷 Screenshot</button>
+    <div id="screenshot_preview">
+      <img id="screenshot_thumb" alt="attached screenshot" />
+      <span>attached</span>
+      <button id="screenshot_remove">✕</button>
+    </div>
+  </div>
   <div id="chat_input_row">
     <textarea id="chat_input" placeholder="Ask the AI…"></textarea>
     <button id="chat_send">Send</button>
@@ -675,16 +730,26 @@
   const chatMessages = document.getElementById("chat_messages");
   const chatInput = document.getElementById("chat_input");
   const chatSend = document.getElementById("chat_send");
+  const btnScreenshot = document.getElementById("btn_screenshot");
+  const screenshotPreview = document.getElementById("screenshot_preview");
+  const screenshotThumb = document.getElementById("screenshot_thumb");
+  const screenshotRemove = document.getElementById("screenshot_remove");
 
   chatToggle.addEventListener("click", () => chatPanel.classList.add("open"));
   chatClose.addEventListener("click", () => chatPanel.classList.remove("open"));
 
   function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-  function appendChatMessage(role, text, actionsNote) {
+  function appendChatMessage(role, text, actionsNote, imageDataUrl) {
     const div = document.createElement("div");
     div.className = "chat_msg " + role;
     div.textContent = text;
+    if (imageDataUrl) {
+      const img = document.createElement("img");
+      img.className = "attached_shot";
+      img.src = imageDataUrl;
+      div.appendChild(img);
+    }
     if (actionsNote) {
       const note = document.createElement("span");
       note.className = "chat_actions_note";
@@ -695,6 +760,29 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return div;
   }
+
+  // --- Screenshot capture ---
+  // v86 has a built-in screenshot method that works for both graphical
+  // and text-mode screens, returning an Image with a base64 PNG data URL.
+  let pendingScreenshot = null;
+
+  btnScreenshot.addEventListener("click", () => {
+    if (!emulator.screen_make_screenshot) {
+      statusEl.textContent = "Screenshot not supported.";
+      setTimeout(() => (statusEl.textContent = ""), 2500);
+      return;
+    }
+    const img = emulator.screen_make_screenshot();
+    if (!img || !img.src) return;
+    pendingScreenshot = img.src;
+    screenshotThumb.src = img.src;
+    screenshotPreview.classList.add("attached");
+  });
+
+  screenshotRemove.addEventListener("click", () => {
+    pendingScreenshot = null;
+    screenshotPreview.classList.remove("attached");
+  });
 
   // Maps a <key>"..."</key> name (a character or a named key like
   // "Enter", "Tab", "F5", "ArrowUp") to one of our existing SCANCODES
@@ -773,6 +861,7 @@
       role: "system",
       content:
         "You are an AI assistant that can control a virtual computer running TinyCore Linux inside a web page. " +
+        "The user can attach a screenshot of the current screen to their message - when an image is present, look at it carefully before deciding what actions to take. " +
         "To perform actions, include these tags anywhere in your reply: " +
         '<key>"a"</key> presses a single key (letters, digits, or names like Enter, Tab, Escape, Backspace, ArrowUp, F5, etc). ' +
         '<text>"hello world"</text> types out literal text. ' +
@@ -783,8 +872,20 @@
     },
   ];
 
-  async function callAi(prompt) {
-    chatHistory.push({ role: "user", content: prompt });
+  async function callAi(prompt, imageDataUrl) {
+    // OpenRouter (OpenAI-compatible) multimodal format: content becomes
+    // an array of parts instead of a plain string when an image is attached.
+    const userMessage = imageDataUrl
+      ? {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ],
+        }
+      : { role: "user", content: prompt };
+
+    chatHistory.push(userMessage);
 
     const res = await fetch(AI_ENDPOINT, {
       method: "POST",
@@ -820,11 +921,18 @@
     if (!prompt) return;
     chatInput.value = "";
     chatSend.disabled = true;
-    appendChatMessage("user", prompt);
+
+    const imageForThisMessage = pendingScreenshot;
+    appendChatMessage("user", prompt, null, imageForThisMessage);
+
+    // Clear the attachment after sending so it doesn't stick to future messages
+    pendingScreenshot = null;
+    screenshotPreview.classList.remove("attached");
+
     const pending = appendChatMessage("ai", "…");
 
     try {
-      const reply = await callAi(prompt);
+      const reply = await callAi(prompt, imageForThisMessage);
       // Strip action tags out of the displayed text so the chat log
       // stays readable; the tags themselves still get executed below.
       const displayText = reply
@@ -834,7 +942,12 @@
         .replace(/<click\s*\/>/g, "")
         .trim();
 
-      pending.textContent = displayText || "(no reply text)";
+      // Use a text node instead of textContent so we don't clobber any
+      // child elements (there are none yet at this point, but keeps
+      // this safe if that changes later).
+      pending.firstChild
+        ? (pending.firstChild.textContent = displayText || "(no reply text)")
+        : pending.appendChild(document.createTextNode(displayText || "(no reply text)"));
 
       const actionCount = await runAiActions(reply);
       if (actionCount > 0) {
