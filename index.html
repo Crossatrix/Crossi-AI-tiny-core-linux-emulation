@@ -252,6 +252,36 @@
     margin-top: 4px;
     color: #6a6;
     font-size: 10.5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .chat_actions_note:hover { color: #8e8; }
+  .chat_actions_note .caret {
+    display: inline-block;
+    transition: transform 0.15s ease;
+    margin-right: 3px;
+  }
+  .chat_actions_note.expanded .caret {
+    transform: rotate(90deg);
+  }
+  .chat_actions_log {
+    display: none;
+    margin-top: 4px;
+    padding: 6px 8px;
+    background: #1a1a1a;
+    border: 1px solid #262626;
+    border-radius: 5px;
+    font-size: 10.5px;
+    color: #aaa;
+  }
+  .chat_actions_log.expanded { display: block; }
+  .chat_actions_log ol {
+    margin: 0;
+    padding-left: 16px;
+  }
+  .chat_actions_log li {
+    margin-bottom: 2px;
+    word-break: break-word;
   }
 
   #chat_input_row {
@@ -834,25 +864,30 @@
   // Parses <key>"..."</key>, <text>"..."</text>, <move>"dx,dy"</move>,
   // and <click/> tags out of the AI's reply and runs them in order,
   // with a small pause between each so the guest OS can keep up.
+  // Returns an array of human-readable descriptions of what ran, in order.
   async function runAiActions(replyText) {
     const tagRegex = /<key>"(.*?)"<\/key>|<text>"([\s\S]*?)"<\/text>|<move>"(.*?)"<\/move>|<click\s*\/>/g;
     let match;
-    let count = 0;
+    const log = [];
     while ((match = tagRegex.exec(replyText)) !== null) {
       if (match[1] !== undefined) {
         await pressNamedKey(match[1]);
+        log.push(`Pressed key: "${match[1]}"`);
       } else if (match[2] !== undefined) {
         await emulator.keyboard_send_text(match[2]);
+        log.push(`Typed text: "${match[2]}"`);
       } else if (match[3] !== undefined) {
         const parts = match[3].split(",").map((s) => parseInt(s.trim(), 10) || 0);
-        aiMove(parts[0] || 0, parts[1] || 0);
+        const dx = parts[0] || 0, dy = parts[1] || 0;
+        aiMove(dx, dy);
+        log.push(`Moved cursor: dx=${dx}, dy=${dy}`);
       } else {
         await aiClick();
+        log.push("Left click");
       }
-      count++;
       await sleep(80);
     }
-    return count;
+    return log;
   }
 
   // Keeps the running conversation so the AI has context across turns.
@@ -949,12 +984,36 @@
         ? (pending.firstChild.textContent = displayText || "(no reply text)")
         : pending.appendChild(document.createTextNode(displayText || "(no reply text)"));
 
-      const actionCount = await runAiActions(reply);
-      if (actionCount > 0) {
+      const actionLog = await runAiActions(reply);
+      if (actionLog.length > 0) {
         const note = document.createElement("span");
         note.className = "chat_actions_note";
-        note.textContent = `Performed ${actionCount} action${actionCount === 1 ? "" : "s"} in the emulator.`;
+
+        const caret = document.createElement("span");
+        caret.className = "caret";
+        caret.textContent = "▶";
+        note.appendChild(caret);
+        note.appendChild(document.createTextNode(
+          `Performed ${actionLog.length} action${actionLog.length === 1 ? "" : "s"} in the emulator`
+        ));
+
+        const details = document.createElement("div");
+        details.className = "chat_actions_log";
+        const ol = document.createElement("ol");
+        actionLog.forEach((step) => {
+          const li = document.createElement("li");
+          li.textContent = step;
+          ol.appendChild(li);
+        });
+        details.appendChild(ol);
+
+        note.addEventListener("click", () => {
+          note.classList.toggle("expanded");
+          details.classList.toggle("expanded");
+        });
+
         pending.appendChild(note);
+        pending.appendChild(details);
       }
     } catch (err) {
       pending.textContent = "Error reaching AI: " + err.message;
