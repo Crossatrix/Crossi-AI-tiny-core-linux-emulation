@@ -856,15 +856,19 @@
     emulator.bus.send("mouse-click", [false, false, false]);
   }
 
-  function aiMove(dx, dy) {
+  async function aiMove(dx, dy) {
     if (!emulator.bus) return;
     emulator.bus.send("mouse-delta", [dx, -dy]);
+    await sleep(50); // let the guest register the movement before any follow-up action
   }
 
   // Parses <key>"..."</key>, <text>"..."</text>, <move>"dx,dy"</move>,
   // and <click/> tags out of the AI's reply and runs them in order,
-  // with a small pause between each so the guest OS can keep up.
-  // Returns an array of human-readable descriptions of what ran, in order.
+  // with a 300ms pause between each so the guest OS reliably registers
+  // each action before the next one fires - important when a move is
+  // immediately followed by a click, or a key press by another key press.
+  const AI_ACTION_DELAY_MS = 300;
+
   async function runAiActions(replyText) {
     const tagRegex = /<key>"(.*?)"<\/key>|<text>"([\s\S]*?)"<\/text>|<move>"(.*?)"<\/move>|<click\s*\/>/g;
     let match;
@@ -879,13 +883,13 @@
       } else if (match[3] !== undefined) {
         const parts = match[3].split(",").map((s) => parseInt(s.trim(), 10) || 0);
         const dx = parts[0] || 0, dy = parts[1] || 0;
-        aiMove(dx, dy);
+        await aiMove(dx, dy);
         log.push(`Moved cursor: dx=${dx}, dy=${dy}`);
       } else {
         await aiClick();
         log.push("Left click");
       }
-      await sleep(80);
+      await sleep(AI_ACTION_DELAY_MS);
     }
     return log;
   }
