@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -276,6 +276,7 @@
       autostart: true,
       memory_size: 128 * 1024 * 1024,
       vga_memory_size: 8 * 1024 * 1024,
+      network_relay_url: "wss://relay.widgetry.org/",
     });
   } catch (err) {
     statusEl.textContent = "Emulator init failed: " + err.message;
