@@ -127,7 +127,111 @@
   #state_bar button:last-child { border-right: none; }
   #state_bar button:active { background: #1a1a1a; }
   #state_bar button:disabled { color: #555; }
-  #btn_clear_state { color: #a55; flex: 0 0 44px; }
+
+  /* --- Saves popup menu --- */
+  #saves_overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 45;
+  }
+  #saves_overlay.open { display: block; }
+
+  #saves_menu {
+    display: none;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(340px, 90vw);
+    max-height: 80vh;
+    background: #161616;
+    border: 1px solid #333;
+    border-radius: 8px;
+    z-index: 46;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #saves_menu.open { display: flex; }
+
+  #saves_menu_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #2a2a2a;
+    color: #7fd67f;
+    font: 12px monospace;
+  }
+  #saves_menu_close {
+    background: none;
+    border: none;
+    color: #888;
+    font: 16px monospace;
+    padding: 2px 6px;
+  }
+
+  #saves_slots {
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .save_slot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: #1c1c1c;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    font: 11px monospace;
+    color: #ccc;
+  }
+  .save_slot.active_slot { border-color: #4a7a4a; background: #1a221c; }
+  .save_slot_info { flex: 1; min-width: 0; }
+  .save_slot_title { color: #eee; font-size: 12px; margin-bottom: 2px; }
+  .save_slot_meta { color: #888; font-size: 10px; }
+  .save_slot_btns { display: flex; gap: 4px; flex: 0 0 auto; }
+  .save_slot_btns button {
+    background: #232323;
+    color: #7fd67f;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font: 10px monospace;
+  }
+  .save_slot_btns button:active { background: #2c2c2c; }
+  .save_slot_btns button.danger { color: #c66; }
+  .save_slot_btns button:disabled { color: #555; }
+
+  #saves_autosave_row {
+    padding: 10px 12px;
+    border-top: 1px solid #2a2a2a;
+    font: 11px monospace;
+    color: #aaa;
+  }
+  #autosave_toggle_row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #autosave_interval {
+    background: #1c1c1c;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 4px;
+    font: 11px monospace;
+    padding: 2px 4px;
+  }
+  #autosave_status {
+    margin-top: 6px;
+    color: #6a6;
+    font-size: 10.5px;
+  }
 
   .kbd_row {
     display: flex;
@@ -433,9 +537,31 @@
   </div>
 
   <div id="state_bar">
-    <button id="btn_save_state">💾 Save State</button>
-    <button id="btn_load_state">⏏ Reload Saved</button>
-    <button id="btn_clear_state">🗑</button>
+    <button id="btn_saves">💾 Saves</button>
+  </div>
+
+  <div id="saves_overlay"></div>
+  <div id="saves_menu">
+    <div id="saves_menu_header">
+      <span>Saved States</span>
+      <button id="saves_menu_close">✕</button>
+    </div>
+
+    <div id="saves_slots"></div>
+
+    <div id="saves_autosave_row">
+      <label id="autosave_toggle_row">
+        <input type="checkbox" id="autosave_enabled" />
+        Auto-save every
+        <select id="autosave_interval">
+          <option value="60">1 min</option>
+          <option value="120" selected>2 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+        </select>
+      </label>
+      <div id="autosave_status">Off</div>
+    </div>
   </div>
 
   <div id="kbd">
@@ -536,51 +662,114 @@
   const kbdPanel = document.getElementById("kbd");
 
   // ============================================================
-  // IndexedDB storage for full VM snapshots
+  // IndexedDB storage for full VM snapshots - up to 5 named slots,
+  // plus a small "meta" store for settings (active slot, auto-save interval).
   // ============================================================
   const SNAPSHOT_DB_NAME = "tinycore_vm_snapshots";
-  const SNAPSHOT_STORE = "snapshots";
-  const SNAPSHOT_KEY = "latest"; // single-slot save for now
+  const SNAPSHOT_STORE = "snapshots"; // key: slot number 1-5, value: {data, savedAt, sizeBytes}
+  const META_STORE = "meta";          // key: setting name, value: setting value
+  const MAX_SLOTS = 5;
 
   function openSnapshotDB() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(SNAPSHOT_DB_NAME, 1);
-      req.onupgradeneeded = () => {
-        req.result.createObjectStore(SNAPSHOT_STORE);
+      const req = indexedDB.open(SNAPSHOT_DB_NAME, 2);
+      req.onupgradeneeded = (e) => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+          db.createObjectStore(SNAPSHOT_STORE);
+        }
+        if (!db.objectStoreNames.contains(META_STORE)) {
+          db.createObjectStore(META_STORE);
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
   }
 
-  async function saveSnapshotToDB(arrayBuffer) {
+  async function saveSnapshotToSlot(slot, arrayBuffer) {
     const db = await openSnapshotDB();
+    const record = { data: arrayBuffer, savedAt: Date.now(), sizeBytes: arrayBuffer.byteLength };
     return new Promise((resolve, reject) => {
       const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
-      tx.objectStore(SNAPSHOT_STORE).put(arrayBuffer, SNAPSHOT_KEY);
+      tx.objectStore(SNAPSHOT_STORE).put(record, slot);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
 
-  async function loadSnapshotFromDB() {
+  async function loadSnapshotFromSlot(slot) {
     const db = await openSnapshotDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(SNAPSHOT_STORE, "readonly");
-      const req = tx.objectStore(SNAPSHOT_STORE).get(SNAPSHOT_KEY);
+      const req = tx.objectStore(SNAPSHOT_STORE).get(slot);
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
   }
 
-  async function deleteSnapshotFromDB() {
+  async function deleteSnapshotSlot(slot) {
     const db = await openSnapshotDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
-      tx.objectStore(SNAPSHOT_STORE).delete(SNAPSHOT_KEY);
+      tx.objectStore(SNAPSHOT_STORE).delete(slot);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  async function getAllSnapshotSlots() {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(SNAPSHOT_STORE, "readonly");
+      const store = tx.objectStore(SNAPSHOT_STORE);
+      const results = {};
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          results[cursor.key] = { savedAt: cursor.value.savedAt, sizeBytes: cursor.value.sizeBytes };
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function getMeta(key, defaultValue) {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(META_STORE, "readonly");
+      const req = tx.objectStore(META_STORE).get(key);
+      req.onsuccess = () => resolve(req.result !== undefined ? req.result : defaultValue);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function setMeta(key, value) {
+    const db = await openSnapshotDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(META_STORE, "readwrite");
+      tx.objectStore(META_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // The slot used for auto-restore on page load and for auto-save.
+  async function getActiveSlot() {
+    return getMeta("activeSlot", 1);
+  }
+  async function setActiveSlot(slot) {
+    return setMeta("activeSlot", slot);
+  }
+
+  async function loadActiveSnapshot() {
+    const slot = await getActiveSlot();
+    const record = await loadSnapshotFromSlot(slot);
+    return record ? record.data : null;
   }
 
   // ============================================================
@@ -606,8 +795,12 @@
     throw err;
   }
 
+  let bootResolveReady;
+  const emulatorReadyPromise = new Promise((resolve) => (bootResolveReady = resolve));
+
   emulator.add_listener("emulator-ready", () => {
     statusEl.textContent = "Booting…";
+    bootResolveReady();
   });
 
   emulator.add_listener("emulator-started", () => {
@@ -615,18 +808,27 @@
   });
 
   (async () => {
+    // autostart is off, so the emulator won't fire emulator-ready until
+    // we call run(). We call it once here, wait for readiness, and only
+    // THEN attempt a state restore - restore_state() needs the machine
+    // to already be initialized, so doing this in the wrong order was
+    // the cause of the earlier "stuck on Booting" bug.
+    emulator.run();
+    await emulatorReadyPromise;
+
     try {
-      const saved = await loadSnapshotFromDB();
+      const saved = await loadActiveSnapshot();
       if (saved) {
         statusEl.textContent = "Restoring saved state…";
         await emulator.restore_state(saved);
         statusEl.textContent = "";
       }
     } catch (err) {
-      console.log("Snapshot restore failed, booting fresh:", err);
+      console.log("Snapshot restore failed, continuing with fresh boot:", err);
       statusEl.textContent = "";
     }
-    emulator.run();
+
+    startAutoSaveTimer();
   })();
 
   // --- Block direct screen touches from reaching v86's own touch
@@ -766,64 +968,178 @@
     fileInput.value = ""; // allow re-selecting the same file later
   });
 
-  // --- Save / Load / Clear full VM state (IndexedDB) ---
-  // emulator.save_state() captures the entire machine - CPU, RAM, disk,
-  // and the 9p filesystem - as one binary blob. This can be tens of MB,
-  // so it's a manual action rather than something run automatically.
-  const btnSaveState = document.getElementById("btn_save_state");
-  const btnLoadState = document.getElementById("btn_load_state");
-  const btnClearState = document.getElementById("btn_clear_state");
-
+  // ============================================================
+  // Saves popup menu: up to 5 slots, plus configurable auto-save
+  // ============================================================
   function showStateStatus(msg, ms = 2500) {
     statusEl.textContent = msg;
     if (ms) setTimeout(() => (statusEl.textContent = ""), ms);
   }
 
-  btnSaveState.addEventListener("click", async () => {
-    btnSaveState.disabled = true;
-    const original = btnSaveState.textContent;
+  const btnSaves = document.getElementById("btn_saves");
+  const savesOverlay = document.getElementById("saves_overlay");
+  const savesMenu = document.getElementById("saves_menu");
+  const savesMenuClose = document.getElementById("saves_menu_close");
+  const savesSlotsEl = document.getElementById("saves_slots");
+  const autosaveEnabledEl = document.getElementById("autosave_enabled");
+  const autosaveIntervalEl = document.getElementById("autosave_interval");
+  const autosaveStatusEl = document.getElementById("autosave_status");
+
+  function openSavesMenu() {
+    savesOverlay.classList.add("open");
+    savesMenu.classList.add("open");
+    renderSavesSlots();
+  }
+  function closeSavesMenu() {
+    savesOverlay.classList.remove("open");
+    savesMenu.classList.remove("open");
+  }
+  btnSaves.addEventListener("click", openSavesMenu);
+  savesMenuClose.addEventListener("click", closeSavesMenu);
+  savesOverlay.addEventListener("click", closeSavesMenu);
+
+  function formatWhen(ts) {
+    if (!ts) return "empty";
+    const d = new Date(ts);
+    return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function renderSavesSlots() {
+    const [slotsMeta, activeSlot] = await Promise.all([getAllSnapshotSlots(), getActiveSlot()]);
+    savesSlotsEl.innerHTML = "";
+
+    for (let slot = 1; slot <= MAX_SLOTS; slot++) {
+      const meta = slotsMeta[slot];
+      const row = document.createElement("div");
+      row.className = "save_slot" + (slot === activeSlot ? " active_slot" : "");
+
+      const info = document.createElement("div");
+      info.className = "save_slot_info";
+      const title = document.createElement("div");
+      title.className = "save_slot_title";
+      title.textContent = `Slot ${slot}` + (slot === activeSlot ? " (active)" : "");
+      const metaLine = document.createElement("div");
+      metaLine.className = "save_slot_meta";
+      metaLine.textContent = meta
+        ? `${formatWhen(meta.savedAt)} · ${(meta.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+        : "Empty";
+      info.appendChild(title);
+      info.appendChild(metaLine);
+
+      const btns = document.createElement("div");
+      btns.className = "save_slot_btns";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.textContent = "Save";
+      saveBtn.addEventListener("click", () => saveToSlot(slot));
+
+      const loadBtn = document.createElement("button");
+      loadBtn.textContent = "Load";
+      loadBtn.disabled = !meta;
+      loadBtn.addEventListener("click", () => loadFromSlot(slot));
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "danger";
+      delBtn.textContent = "🗑";
+      delBtn.disabled = !meta;
+      delBtn.addEventListener("click", () => deleteSlot(slot));
+
+      btns.appendChild(saveBtn);
+      btns.appendChild(loadBtn);
+      btns.appendChild(delBtn);
+
+      row.appendChild(info);
+      row.appendChild(btns);
+      savesSlotsEl.appendChild(row);
+    }
+  }
+
+  async function saveToSlot(slot) {
     try {
-      btnSaveState.textContent = "Saving…";
+      showStateStatus(`Saving to slot ${slot}…`, 0);
       const state = await emulator.save_state();
-      await saveSnapshotToDB(state);
-      const sizeMB = (state.byteLength / (1024 * 1024)).toFixed(1);
-      showStateStatus(`Saved (${sizeMB} MB). Will auto-restore next time this page loads.`, 4000);
+      await saveSnapshotToSlot(slot, state);
+      await setActiveSlot(slot);
+      showStateStatus(`Saved to slot ${slot}.`, 3000);
+      renderSavesSlots();
     } catch (err) {
       showStateStatus("Save failed: " + err.message, 4000);
-    } finally {
-      btnSaveState.textContent = original;
-      btnSaveState.disabled = false;
     }
-  });
+  }
 
-  btnLoadState.addEventListener("click", async () => {
-    btnLoadState.disabled = true;
-    const original = btnLoadState.textContent;
+  async function loadFromSlot(slot) {
     try {
-      const saved = await loadSnapshotFromDB();
-      if (!saved) {
-        showStateStatus("No saved state found.");
-        return;
-      }
-      btnLoadState.textContent = "Loading…";
-      await emulator.restore_state(saved);
-      showStateStatus("State reloaded.");
+      const record = await loadSnapshotFromSlot(slot);
+      if (!record) return;
+      showStateStatus(`Loading slot ${slot}…`, 0);
+      await emulator.restore_state(record.data);
+      await setActiveSlot(slot);
+      showStateStatus(`Loaded slot ${slot}.`, 3000);
+      closeSavesMenu();
     } catch (err) {
       showStateStatus("Load failed: " + err.message, 4000);
-    } finally {
-      btnLoadState.textContent = original;
-      btnLoadState.disabled = false;
     }
+  }
+
+  async function deleteSlot(slot) {
+    if (!confirm(`Delete slot ${slot}? This can't be undone.`)) return;
+    try {
+      await deleteSnapshotSlot(slot);
+      showStateStatus(`Slot ${slot} cleared.`, 2500);
+      renderSavesSlots();
+    } catch (err) {
+      showStateStatus("Delete failed: " + err.message, 4000);
+    }
+  }
+
+  // --- Auto-save ---
+  // Runs on a user-configurable interval (default 2 min), always saving
+  // into the currently active slot. Setting is remembered in IndexedDB.
+  let autoSaveTimer = null;
+
+  function updateAutosaveStatusLabel() {
+    if (!autosaveEnabledEl.checked) {
+      autosaveStatusEl.textContent = "Off";
+      return;
+    }
+    const mins = Math.round(parseInt(autosaveIntervalEl.value, 10) / 60);
+    autosaveStatusEl.textContent = `On — every ${mins} min, saving to active slot`;
+  }
+
+  async function startAutoSaveTimer() {
+    if (autoSaveTimer) clearInterval(autoSaveTimer);
+
+    const enabled = await getMeta("autosaveEnabled", false);
+    const intervalSec = await getMeta("autosaveInterval", 120);
+
+    autosaveEnabledEl.checked = enabled;
+    autosaveIntervalEl.value = String(intervalSec);
+    updateAutosaveStatusLabel();
+
+    if (!enabled) return;
+
+    autoSaveTimer = setInterval(async () => {
+      const slot = await getActiveSlot();
+      try {
+        const state = await emulator.save_state();
+        await saveSnapshotToSlot(slot, state);
+        showStateStatus(`Auto-saved to slot ${slot}.`, 2000);
+      } catch (err) {
+        console.log("Auto-save failed:", err);
+      }
+    }, intervalSec * 1000);
+  }
+
+  autosaveEnabledEl.addEventListener("change", async () => {
+    await setMeta("autosaveEnabled", autosaveEnabledEl.checked);
+    updateAutosaveStatusLabel();
+    startAutoSaveTimer();
   });
 
-  btnClearState.addEventListener("click", async () => {
-    if (!confirm("Delete the saved VM snapshot? This can't be undone.")) return;
-    try {
-      await deleteSnapshotFromDB();
-      showStateStatus("Saved state cleared.");
-    } catch (err) {
-      showStateStatus("Clear failed: " + err.message, 4000);
-    }
+  autosaveIntervalEl.addEventListener("change", async () => {
+    await setMeta("autosaveInterval", parseInt(autosaveIntervalEl.value, 10));
+    updateAutosaveStatusLabel();
+    startAutoSaveTimer();
   });
 
 
