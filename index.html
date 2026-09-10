@@ -110,6 +110,46 @@
   .key.wider { flex: 2.2; }
   .key.space { flex: 6; }
   .key.mod   { color: #7fd67f; font-size: 11px; }
+
+  /* --- Mobile trackpad + click buttons --- */
+  .mobile-only { display: none; }
+  @media (pointer: coarse) {
+    .mobile-only { display: flex; }
+  }
+
+  #pointer_bar {
+    flex: 0 0 auto;
+    gap: 4px;
+    padding: 4px;
+    background: #161616;
+    border-top: 1px solid #2a2a2a;
+  }
+
+  #trackpad {
+    flex: 1;
+    height: 64px;
+    background: #202020;
+    border: 1px solid #333;
+    border-radius: 6px;
+    touch-action: none;
+  }
+  #trackpad.active {
+    background: #26332a;
+    border-color: #3a5a3a;
+  }
+
+  .mouse_btn {
+    width: 64px;
+    background: #262626;
+    color: #eee;
+    border: 1px solid #363636;
+    border-radius: 6px;
+    font: 11px monospace;
+  }
+  .mouse_btn:active, .mouse_btn.active {
+    background: #3a5a3a;
+    border-color: #4a7a4a;
+  }
 </style>
 </head>
 <body>
@@ -118,6 +158,12 @@
   <div id="status">Loading…</div>
   <div id="screen_container"></div>
 
+  <div id="pointer_bar" class="mobile-only">
+    <div id="trackpad"></div>
+    <button class="mouse_btn" id="btn_lclick">Left</button>
+    <button class="mouse_btn" id="btn_rclick">Right</button>
+  </div>
+
   <div id="kbd_toggle_bar">
     <button id="kbd_toggle">⌨ Show Keyboard</button>
   </div>
@@ -125,62 +171,64 @@
   <div id="kbd">
     <div class="kbd_row">
       <button class="key" data-code="Escape">Esc</button>
-      <button class="key" data-code="Digit1">1</button>
-      <button class="key" data-code="Digit2">2</button>
-      <button class="key" data-code="Digit3">3</button>
-      <button class="key" data-code="Digit4">4</button>
-      <button class="key" data-code="Digit5">5</button>
-      <button class="key" data-code="Digit6">6</button>
-      <button class="key" data-code="Digit7">7</button>
-      <button class="key" data-code="Digit8">8</button>
-      <button class="key" data-code="Digit9">9</button>
-      <button class="key" data-code="Digit0">0</button>
-      <button class="key" data-code="Minus">-</button>
-      <button class="key" data-code="Equal">=</button>
+      <button class="key" data-code="Backquote" data-lower="`" data-shift="~">`</button>
+      <button class="key" data-code="Digit1" data-lower="1" data-shift="!">1</button>
+      <button class="key" data-code="Digit2" data-lower="2" data-shift="@">2</button>
+      <button class="key" data-code="Digit3" data-lower="3" data-shift="#">3</button>
+      <button class="key" data-code="Digit4" data-lower="4" data-shift="$">4</button>
+      <button class="key" data-code="Digit5" data-lower="5" data-shift="%">5</button>
+      <button class="key" data-code="Digit6" data-lower="6" data-shift="^">6</button>
+      <button class="key" data-code="Digit7" data-lower="7" data-shift="&">7</button>
+      <button class="key" data-code="Digit8" data-lower="8" data-shift="*">8</button>
+      <button class="key" data-code="Digit9" data-lower="9" data-shift="(">9</button>
+      <button class="key" data-code="Digit0" data-lower="0" data-shift=")">0</button>
+      <button class="key" data-code="Minus" data-lower="-" data-shift="_">-</button>
+      <button class="key" data-code="Equal" data-lower="=" data-shift="+">=</button>
       <button class="key wide" data-code="Backspace">⌫</button>
     </div>
     <div class="kbd_row">
       <button class="key wide" data-code="Tab">Tab</button>
-      <button class="key" data-code="KeyQ">q</button>
-      <button class="key" data-code="KeyW">w</button>
-      <button class="key" data-code="KeyE">e</button>
-      <button class="key" data-code="KeyR">r</button>
-      <button class="key" data-code="KeyT">t</button>
-      <button class="key" data-code="KeyY">y</button>
-      <button class="key" data-code="KeyU">u</button>
-      <button class="key" data-code="KeyI">i</button>
-      <button class="key" data-code="KeyO">o</button>
-      <button class="key" data-code="KeyP">p</button>
-      <button class="key" data-code="BracketLeft">[</button>
-      <button class="key" data-code="BracketRight">]</button>
+      <button class="key" data-code="KeyQ" data-lower="q" data-shift="Q">q</button>
+      <button class="key" data-code="KeyW" data-lower="w" data-shift="W">w</button>
+      <button class="key" data-code="KeyE" data-lower="e" data-shift="E">e</button>
+      <button class="key" data-code="KeyR" data-lower="r" data-shift="R">r</button>
+      <button class="key" data-code="KeyT" data-lower="t" data-shift="T">t</button>
+      <button class="key" data-code="KeyY" data-lower="y" data-shift="Y">y</button>
+      <button class="key" data-code="KeyU" data-lower="u" data-shift="U">u</button>
+      <button class="key" data-code="KeyI" data-lower="i" data-shift="I">i</button>
+      <button class="key" data-code="KeyO" data-lower="o" data-shift="O">o</button>
+      <button class="key" data-code="KeyP" data-lower="p" data-shift="P">p</button>
+      <button class="key" data-code="BracketLeft" data-lower="[" data-shift="{">[</button>
+      <button class="key" data-code="BracketRight" data-lower="]" data-shift="}">]</button>
     </div>
     <div class="kbd_row">
       <button class="key mod wider" data-code="CapsLock" data-lock="1">Caps</button>
-      <button class="key" data-code="KeyA">a</button>
-      <button class="key" data-code="KeyS">s</button>
-      <button class="key" data-code="KeyD">d</button>
-      <button class="key" data-code="KeyF">f</button>
-      <button class="key" data-code="KeyG">g</button>
-      <button class="key" data-code="KeyH">h</button>
-      <button class="key" data-code="KeyJ">j</button>
-      <button class="key" data-code="KeyK">k</button>
-      <button class="key" data-code="KeyL">l</button>
-      <button class="key" data-code="Semicolon">;</button>
-      <button class="key" data-code="Quote">'</button>
+      <button class="key" data-code="KeyA" data-lower="a" data-shift="A">a</button>
+      <button class="key" data-code="KeyS" data-lower="s" data-shift="S">s</button>
+      <button class="key" data-code="KeyD" data-lower="d" data-shift="D">d</button>
+      <button class="key" data-code="KeyF" data-lower="f" data-shift="F">f</button>
+      <button class="key" data-code="KeyG" data-lower="g" data-shift="G">g</button>
+      <button class="key" data-code="KeyH" data-lower="h" data-shift="H">h</button>
+      <button class="key" data-code="KeyJ" data-lower="j" data-shift="J">j</button>
+      <button class="key" data-code="KeyK" data-lower="k" data-shift="K">k</button>
+      <button class="key" data-code="KeyL" data-lower="l" data-shift="L">l</button>
+      <button class="key" data-code="Semicolon" data-lower=";" data-shift=":">;</button>
+      <button class="key" data-code="Quote" data-lower="'" data-shift="&quot;">'</button>
       <button class="key wide" data-code="Enter">Enter</button>
     </div>
     <div class="kbd_row">
       <button class="key mod wider" data-code="ShiftLeft" data-lock="1">Shift</button>
-      <button class="key" data-code="KeyZ">z</button>
-      <button class="key" data-code="KeyX">x</button>
-      <button class="key" data-code="KeyC">c</button>
-      <button class="key" data-code="KeyV">v</button>
-      <button class="key" data-code="KeyB">b</button>
-      <button class="key" data-code="KeyN">n</button>
-      <button class="key" data-code="KeyM">m</button>
-      <button class="key" data-code="Comma">,</button>
-      <button class="key" data-code="Period">.</button>
-      <button class="key" data-code="Slash">/</button>
+      <button class="key" data-code="Backslash" data-lower="\" data-shift="|">\</button>
+      <button class="key" data-code="KeyZ" data-lower="z" data-shift="Z">z</button>
+      <button class="key" data-code="KeyX" data-lower="x" data-shift="X">x</button>
+      <button class="key" data-code="KeyC" data-lower="c" data-shift="C">c</button>
+      <button class="key" data-code="KeyV" data-lower="v" data-shift="V">v</button>
+      <button class="key" data-code="KeyB" data-lower="b" data-shift="B">b</button>
+      <button class="key" data-code="KeyN" data-lower="n" data-shift="N">n</button>
+      <button class="key" data-code="KeyM" data-lower="m" data-shift="M">m</button>
+      <button class="key" data-code="Comma" data-lower="," data-shift="<">,</button>
+      <button class="key" data-code="Period" data-lower="." data-shift=">">.</button>
+      <button class="key" data-code="Slash" data-lower="/" data-shift="?">/</button>
       <button class="key mod wider" data-code="ShiftRight" data-lock="1">Shift</button>
     </div>
     <div class="kbd_row">
@@ -242,35 +290,71 @@
     statusEl.textContent = "";
   });
 
-  // --- Touch-to-click bridge ---
-  // v86's built-in mouse adapter moves the cursor on touchmove/touchstart,
-  // but only ever sets the actual button-down/up state from real
-  // mousedown/mouseup events - touchstart/touchend never trigger a
-  // "mouse-click" bus event on their own. Without this, tapping only
-  // ever moves the pointer and never registers a click.
-  let touchIsDown = false;
+  // --- Block direct screen touches from reaching v86's own touch
+  // handling. v86 listens on `window` for touchstart/touchmove/touchend
+  // to move the cursor - but we want touching the display itself to do
+  // nothing, and only allow cursor movement via the dedicated trackpad
+  // below. Capturing + stopping propagation here prevents v86's window
+  // listeners from ever seeing these events when they originate on the
+  // emulator screen. Desktop mouse events are untouched, so PC behavior
+  // stays completely normal.
+  ["touchstart", "touchmove", "touchend", "touchcancel"].forEach((evt) => {
+    screenContainer.addEventListener(evt, (e) => {
+      e.stopPropagation();
+    }, { capture: true, passive: true });
+  });
 
-  screenContainer.addEventListener("touchstart", (e) => {
-    if (!emulator.bus || !emulator.mouse_adapter?.enabled) return;
-    touchIsDown = true;
-    emulator.bus.send("mouse-click", [true, false, false]);
+  // --- Mobile trackpad: drag = relative cursor movement only, no click.
+  // Uses the same "mouse-delta" bus event v86's own mousemove handler
+  // sends, so movement behaves identically to a real mouse's relative mode.
+  const trackpad = document.getElementById("trackpad");
+  let lastTX = 0, lastTY = 0, dragging = false;
+
+  trackpad.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    lastTX = t.clientX;
+    lastTY = t.clientY;
+    dragging = true;
+    trackpad.classList.add("active");
   }, { passive: true });
 
-  screenContainer.addEventListener("touchend", (e) => {
-    if (!emulator.bus || !touchIsDown) return;
-    touchIsDown = false;
-    emulator.bus.send("mouse-click", [false, false, false]);
+  trackpad.addEventListener("touchmove", (e) => {
+    if (!dragging || !emulator.bus) return;
+    const t = e.touches[0];
+    const dx = t.clientX - lastTX;
+    const dy = t.clientY - lastTY;
+    lastTX = t.clientX;
+    lastTY = t.clientY;
+    emulator.bus.send("mouse-delta", [dx, -dy]);
   }, { passive: true });
 
-  screenContainer.addEventListener("touchcancel", (e) => {
-    if (!emulator.bus || !touchIsDown) return;
-    touchIsDown = false;
-    emulator.bus.send("mouse-click", [false, false, false]);
-  }, { passive: true });
+  ["touchend", "touchcancel"].forEach((evt) => {
+    trackpad.addEventListener(evt, () => {
+      dragging = false;
+      trackpad.classList.remove("active");
+    }, { passive: true });
+  });
 
-  // If v86 hits a runtime error it usually surfaces via console; we
-  // don't have a hook for that here, so leave status visible longer
-  // in case something silently fails - remove this line once confirmed working.
+  // --- Left / Right click buttons ---
+  // Sends the same "mouse-click" bus event v86's own mousedown/mouseup
+  // handlers use: [leftDown, middleDown, rightDown].
+  function wireClickButton(btn, buttonIndex) {
+    const sendState = (down) => {
+      if (!emulator.bus) return;
+      const state = [false, false, false];
+      state[buttonIndex] = down;
+      emulator.bus.send("mouse-click", state);
+      btn.classList.toggle("active", down);
+    };
+    btn.addEventListener("touchstart", (e) => { e.preventDefault(); sendState(true); }, { passive: false });
+    btn.addEventListener("touchend", (e) => { e.preventDefault(); sendState(false); }, { passive: false });
+    btn.addEventListener("touchcancel", () => sendState(false));
+    // Also support plain clicks (e.g. testing on a touch-emulating desktop browser)
+    btn.addEventListener("mousedown", () => sendState(true));
+    btn.addEventListener("mouseup", () => sendState(false));
+  }
+  wireClickButton(document.getElementById("btn_lclick"), 0);
+  wireClickButton(document.getElementById("btn_rclick"), 2);
 
   // --- Keyboard toggle ---
   kbdToggle.addEventListener("click", () => {
@@ -328,9 +412,46 @@
     sendScancode(sc, false);
   }
 
+  // --- Shift-aware key labels ---
+  // The physical PS/2 scancode sent is always the same regardless of
+  // Shift state - the guest OS itself combines scancode + shift to
+  // produce the right character. So we only need to update what the
+  // button *displays*, not what code it sends.
+  const labeledKeys = document.querySelectorAll(".key[data-lower]");
+
+  function isShiftActive() {
+    return heldModifiers.has("ShiftLeft") || heldModifiers.has("ShiftRight");
+  }
+  function isCapsActive() {
+    return heldModifiers.has("CapsLock");
+  }
+
+  function updateKeyLabels() {
+    const shift = isShiftActive();
+    const caps = isCapsActive();
+    labeledKeys.forEach((btn) => {
+      const lower = btn.dataset.lower;
+      const upper = btn.dataset.shift;
+      const isLetter = /^[a-z]$/i.test(lower);
+      let label;
+      if (isLetter) {
+        // Caps and Shift both flip case; combined they cancel out
+        const useUpper = caps !== shift;
+        label = useUpper ? upper : lower;
+      } else {
+        label = shift ? upper : lower;
+      }
+      btn.textContent = label;
+    });
+  }
+
   document.querySelectorAll(".key").forEach((btn) => {
     const code = btn.dataset.code;
     const isSticky = btn.dataset.lock === "1";
+
+    if (isSticky && (code.startsWith("Shift") || code === "CapsLock")) {
+      btn.addEventListener("click", updateKeyLabels);
+    }
 
     if (isSticky) {
       btn.addEventListener("click", () => {
@@ -357,6 +478,7 @@
             keyUp(mod);
           }
         }
+        updateKeyLabels();
       });
     }
   });
