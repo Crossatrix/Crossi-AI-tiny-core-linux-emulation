@@ -795,12 +795,14 @@
     throw err;
   }
 
-  let bootResolveReady;
-  const emulatorReadyPromise = new Promise((resolve) => (bootResolveReady = resolve));
-
   emulator.add_listener("emulator-ready", () => {
+    // Note: v86 actually fires this synchronously during the V86()
+    // constructor itself (tied to CPU init, not to autostart/run()), so
+    // by the time this listener is attached the event has very likely
+    // already fired once. We don't rely on it for sequencing below -
+    // it's kept only to update the status text if it happens to fire
+    // again (e.g. on a manual restart).
     statusEl.textContent = "Booting…";
-    bootResolveReady();
   });
 
   emulator.add_listener("emulator-started", () => {
@@ -808,14 +810,14 @@
   });
 
   (async () => {
-    // autostart is off, so the emulator won't fire emulator-ready until
-    // we call run(). We call it once here, wait for readiness, and only
-    // THEN attempt a state restore - restore_state() needs the machine
-    // to already be initialized, so doing this in the wrong order was
-    // the cause of the earlier "stuck on Booting" bug.
-    emulator.run();
-    await emulatorReadyPromise;
-
+    // The machine (CPU, memory, etc) is already initialized by the time
+    // `new V86(...)` returns above - v86 does this synchronously in its
+    // constructor regardless of autostart. So we can safely check for
+    // and restore a saved snapshot right away, THEN start the CPU
+    // running with run(). Restoring after run() (or waiting on an
+    // emulator-ready listener attached post-construction, which never
+    // fires because the real event already happened during construction)
+    // was the cause of the earlier stuck-on-boot bug.
     try {
       const saved = await loadActiveSnapshot();
       if (saved) {
@@ -828,6 +830,7 @@
       statusEl.textContent = "";
     }
 
+    emulator.run();
     startAutoSaveTimer();
   })();
 
