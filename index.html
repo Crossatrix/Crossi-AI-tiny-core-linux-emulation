@@ -829,7 +829,7 @@
       vga_bios: { url: "vgabios.bin" },
       cdrom: { url: "tinycore.iso" },
       autostart: false,
-      memory_size: 128 * 1024 * 1024,
+      memory_size: 512 * 1024 * 1024,
       vga_memory_size: 8 * 1024 * 1024,
       network_relay_url: "wss://relay.widgetry.org/",
       filesystem: {}, // empty writable 9p share - required for emulator.create_file() to work
@@ -867,26 +867,65 @@
     await readyPromise;
     dlog("Ready confirmed. Checking for saved snapshot…");
 
-    try {
-      const saved = await loadActiveSnapshot();
-      dlog("loadActiveSnapshot() returned: " + (saved ? `${saved.byteLength} bytes` : "null"));
-      if (saved) {
-        statusEl.textContent = "Restoring saved state…";
-        dlog("Calling restore_state()…");
-        await emulator.restore_state(saved);
-        dlog("restore_state() completed.");
+    // "New Save" flow: the Saves menu can reload the page with
+    // ?fresh_boot_to_slot=N to request a clean boot (skipping any
+    // snapshot restore) and then auto-save that fresh state into slot N
+    // once TinyCore has finished starting up.
+    const urlParams = new URLSearchParams(window.location.search);
+    const freshBootTargetSlot = urlParams.has("fresh_boot_to_slot")
+      ? parseInt(urlParams.get("fresh_boot_to_slot"), 10)
+      : null;
+
+    if (freshBootTargetSlot) {
+      dlog(`Fresh boot requested for new save into slot ${freshBootTargetSlot} - skipping restore.`);
+      showStateStatus(`Booting a fresh system for slot ${freshBootTargetSlot}…`, 0);
+    } else {
+      try {
+        const saved = await loadActiveSnapshot();
+        dlog("loadActiveSnapshot() returned: " + (saved ? `${saved.byteLength} bytes` : "null"));
+        if (saved) {
+          statusEl.textContent = "Restoring saved state…";
+          dlog("Calling restore_state()…");
+          await emulator.restore_state(saved);
+          dlog("restore_state() completed.");
+          statusEl.textContent = "";
+        }
+      } catch (err) {
+        dlog("Snapshot restore FAILED: " + err.message);
+        console.log("Snapshot restore failed, continuing with fresh boot:", err);
         statusEl.textContent = "";
       }
-    } catch (err) {
-      dlog("Snapshot restore FAILED: " + err.message);
-      console.log("Snapshot restore failed, continuing with fresh boot:", err);
-      statusEl.textContent = "";
     }
 
     dlog("Calling emulator.run()…");
     emulator.run();
     dlog("emulator.run() call returned.");
     startAutoSaveTimer();
+
+    if (freshBootTargetSlot) {
+      // Wait for the guest to actually finish starting (not just the
+      // machine object existing) before snapshotting, then save into
+      // the requested slot, make it active, clean the URL, and open
+      // the Saves menu so the result is visible immediately.
+      emulator.add_listener("emulator-started", async function onFreshBootStarted() {
+        emulator.remove_listener("emulator-started", onFreshBootStarted);
+        try {
+          dlog(`Fresh boot finished starting - saving into slot ${freshBootTargetSlot}…`);
+          const state = await emulator.save_state();
+          await saveSnapshotToSlot(freshBootTargetSlot, state);
+          await setActiveSlot(freshBootTargetSlot);
+          showStateStatus(`New save created in slot ${freshBootTargetSlot}.`, 3500);
+        } catch (err) {
+          dlog("Fresh-boot auto-save FAILED: " + err.message);
+          showStateStatus("Couldn't create new save: " + err.message, 4000);
+        } finally {
+          // Strip the query param so refreshing later doesn't repeat this.
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, "", cleanUrl);
+          openSavesMenu();
+        }
+      });
+    }
   })();
 
   // --- Block direct screen touches from reaching v86's own touch
@@ -1087,8 +1126,21 @@
       const btns = document.createElement("div");
       btns.className = "save_slot_btns";
 
+      if (!meta) {
+        // Empty slot: offer "New" (boot a fresh system and save it here)
+        // in addition to "Save" (snapshot whatever is currently running
+        // into this slot). These are genuinely different actions - New
+        // discards the current session's state, Save keeps it.
+        const newBtn = document.createElement("button");
+        newBtn.textContent = "New";
+        newBtn.title = "Boot a fresh empty system and save it to this slot";
+        newBtn.addEventListener("click", () => startNewSaveInSlot(slot));
+        btns.appendChild(newBtn);
+      }
+
       const saveBtn = document.createElement("button");
       saveBtn.textContent = "Save";
+      saveBtn.title = "Save the currently running system into this slot";
       saveBtn.addEventListener("click", () => saveToSlot(slot));
 
       const loadBtn = document.createElement("button");
@@ -1110,6 +1162,17 @@
       row.appendChild(btns);
       savesSlotsEl.appendChild(row);
     }
+  }
+
+  function startNewSaveInSlot(slot) {
+    if (!confirm(
+      `Boot a fresh, empty system and save it to slot ${slot}?\n\n` +
+      "This discards whatever is currently running (unless you've already saved it elsewhere) and reloads the page."
+    )) return;
+    const url = new URL(window.location.href);
+    url.search = ""; // clear any existing params first
+    url.searchParams.set("fresh_boot_to_slot", String(slot));
+    window.location.href = url.toString();
   }
 
   async function saveToSlot(slot) {
