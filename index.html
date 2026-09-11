@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -773,11 +774,41 @@
   }
 
   // ============================================================
+  // On-page diagnostic log (for debugging on devices with no dev tools)
+  // ============================================================
+  const debugLog = document.createElement("div");
+  debugLog.id = "debug_log";
+  debugLog.style.cssText =
+    "position:fixed;bottom:0;left:0;right:0;max-height:40vh;overflow-y:auto;" +
+    "background:rgba(0,0,0,0.9);color:#7fd67f;font:10px monospace;padding:6px;" +
+    "z-index:999;white-space:pre-wrap;border-top:2px solid #7fd67f;";
+  document.body.appendChild(debugLog);
+
+  function dlog(msg) {
+    const line = document.createElement("div");
+    const t = new Date().toLocaleTimeString();
+    line.textContent = `[${t}] ${msg}`;
+    debugLog.appendChild(line);
+    debugLog.scrollTop = debugLog.scrollHeight;
+    console.log(msg);
+  }
+
+  window.addEventListener("error", (e) => {
+    dlog("JS ERROR: " + e.message + " (" + e.filename + ":" + e.lineno + ")");
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    dlog("UNHANDLED PROMISE REJECTION: " + (e.reason?.message || e.reason));
+  });
+
+  dlog("Script started.");
+
+  // ============================================================
   // Emulator setup - autostart is off so we can check for a saved
   // snapshot first and restore into it instead of always booting fresh.
   // ============================================================
   let emulator;
   try {
+    dlog("Constructing V86…");
     emulator = new V86({
       wasm_path: "v86.wasm",
       screen_container: screenContainer,
@@ -790,47 +821,44 @@
       network_relay_url: "wss://relay.widgetry.org/",
       filesystem: {}, // empty writable 9p share - required for emulator.create_file() to work
     });
+    dlog("V86 constructed OK.");
   } catch (err) {
     statusEl.textContent = "Emulator init failed: " + err.message;
+    dlog("V86 constructor THREW: " + err.message);
     throw err;
   }
 
   emulator.add_listener("emulator-ready", () => {
-    // Note: v86 actually fires this synchronously during the V86()
-    // constructor itself (tied to CPU init, not to autostart/run()), so
-    // by the time this listener is attached the event has very likely
-    // already fired once. We don't rely on it for sequencing below -
-    // it's kept only to update the status text if it happens to fire
-    // again (e.g. on a manual restart).
     statusEl.textContent = "Booting…";
+    dlog("Event: emulator-ready");
   });
 
   emulator.add_listener("emulator-started", () => {
     statusEl.textContent = "";
+    dlog("Event: emulator-started");
   });
 
   (async () => {
-    // The machine (CPU, memory, etc) is already initialized by the time
-    // `new V86(...)` returns above - v86 does this synchronously in its
-    // constructor regardless of autostart. So we can safely check for
-    // and restore a saved snapshot right away, THEN start the CPU
-    // running with run(). Restoring after run() (or waiting on an
-    // emulator-ready listener attached post-construction, which never
-    // fires because the real event already happened during construction)
-    // was the cause of the earlier stuck-on-boot bug.
+    dlog("Boot sequence: checking for saved snapshot…");
     try {
       const saved = await loadActiveSnapshot();
+      dlog("loadActiveSnapshot() returned: " + (saved ? `${saved.byteLength} bytes` : "null"));
       if (saved) {
         statusEl.textContent = "Restoring saved state…";
+        dlog("Calling restore_state()…");
         await emulator.restore_state(saved);
+        dlog("restore_state() completed.");
         statusEl.textContent = "";
       }
     } catch (err) {
+      dlog("Snapshot restore FAILED: " + err.message);
       console.log("Snapshot restore failed, continuing with fresh boot:", err);
       statusEl.textContent = "";
     }
 
+    dlog("Calling emulator.run()…");
     emulator.run();
+    dlog("emulator.run() call returned (this does not mean boot finished).");
     startAutoSaveTimer();
   })();
 
