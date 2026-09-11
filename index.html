@@ -687,9 +687,36 @@
     });
   }
 
+  // --- Compression helpers ---
+  // Uses the browser's built-in CompressionStream/DecompressionStream
+  // (gzip) so snapshots take less memory and space once stored, easing
+  // pressure right after the large save_state() allocation. Falls back
+  // to storing uncompressed if the API isn't available (older Safari).
+  const canCompress = typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
+
+  async function gzipCompress(arrayBuffer) {
+    if (!canCompress) return { data: arrayBuffer, compressed: false };
+    const stream = new Blob([arrayBuffer]).stream().pipeThrough(new CompressionStream("gzip"));
+    const compressed = await new Response(stream).arrayBuffer();
+    return { data: compressed, compressed: true };
+  }
+
+  async function gzipDecompress(arrayBuffer) {
+    const stream = new Blob([arrayBuffer]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return new Response(stream).arrayBuffer();
+  }
+
   async function saveSnapshotToSlot(slot, arrayBuffer) {
     const db = await openSnapshotDB();
-    const record = { data: arrayBuffer, savedAt: Date.now(), sizeBytes: arrayBuffer.byteLength };
+    const originalSize = arrayBuffer.byteLength;
+    const { data, compressed } = await gzipCompress(arrayBuffer);
+    const record = {
+      data,
+      compressed,
+      savedAt: Date.now(),
+      sizeBytes: data.byteLength,       // stored (possibly compressed) size, shown in the UI
+      originalSizeBytes: originalSize,  // uncompressed size, for reference
+    };
     return new Promise((resolve, reject) => {
       const tx = db.transaction(SNAPSHOT_STORE, "readwrite");
       tx.objectStore(SNAPSHOT_STORE).put(record, slot);
@@ -700,12 +727,17 @@
 
   async function loadSnapshotFromSlot(slot) {
     const db = await openSnapshotDB();
-    return new Promise((resolve, reject) => {
+    const record = await new Promise((resolve, reject) => {
       const tx = db.transaction(SNAPSHOT_STORE, "readonly");
       const req = tx.objectStore(SNAPSHOT_STORE).get(slot);
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
+    if (!record) return null;
+    if (record.compressed) {
+      record.data = await gzipDecompress(record.data);
+    }
+    return record;
   }
 
   async function deleteSnapshotSlot(slot) {
@@ -829,7 +861,7 @@
       vga_bios: { url: "vgabios.bin" },
       cdrom: { url: "tinycore.iso" },
       autostart: false,
-      memory_size: 512 * 1024 * 1024,
+      memory_size: 256 * 1024 * 1024,
       vga_memory_size: 8 * 1024 * 1024,
       network_relay_url: "wss://relay.widgetry.org/",
       filesystem: {}, // empty writable 9p share - required for emulator.create_file() to work
