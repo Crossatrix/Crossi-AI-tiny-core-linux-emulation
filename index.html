@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -828,9 +827,13 @@
     throw err;
   }
 
+  let readyResolve;
+  const readyPromise = new Promise((resolve) => (readyResolve = resolve));
+
   emulator.add_listener("emulator-ready", () => {
     statusEl.textContent = "Booting…";
     dlog("Event: emulator-ready");
+    readyResolve();
   });
 
   emulator.add_listener("emulator-started", () => {
@@ -839,7 +842,17 @@
   });
 
   (async () => {
-    dlog("Boot sequence: checking for saved snapshot…");
+    // emulator-ready fires asynchronously once v86 finishes loading the
+    // BIOS/VGA BIOS/ISO and constructing its internal machine (this.v86)
+    // - NOT synchronously during the V86() constructor as we previously
+    // (incorrectly) assumed. Calling run() or restore_state() before this
+    // fires throws "undefined is not an object (evaluating 'this.v86.run')"
+    // because the internal machine object doesn't exist yet. This is the
+    // actual root cause of the stuck-boot bug - we now correctly wait here.
+    dlog("Waiting for emulator-ready before touching run()/restore_state()…");
+    await readyPromise;
+    dlog("Ready confirmed. Checking for saved snapshot…");
+
     try {
       const saved = await loadActiveSnapshot();
       dlog("loadActiveSnapshot() returned: " + (saved ? `${saved.byteLength} bytes` : "null"));
@@ -858,7 +871,7 @@
 
     dlog("Calling emulator.run()…");
     emulator.run();
-    dlog("emulator.run() call returned (this does not mean boot finished).");
+    dlog("emulator.run() call returned.");
     startAutoSaveTimer();
   })();
 
