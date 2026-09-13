@@ -829,6 +829,83 @@
   });
   document.body.appendChild(debugToggle);
 
+  // --- Help / Wiki button ---
+  const helpToggle = document.createElement("button");
+  helpToggle.id = "help_toggle";
+  helpToggle.textContent = "📖";
+  helpToggle.style.cssText =
+    "position:fixed;top:6px;right:106px;z-index:1000;background:#191919;color:#7fd67f;" +
+    "border:1px solid #333;border-radius:6px;font:12px monospace;padding:4px 8px;opacity:0.85;";
+  document.body.appendChild(helpToggle);
+
+  const helpOverlay = document.createElement("div");
+  helpOverlay.id = "help_overlay";
+  helpOverlay.style.cssText =
+    "display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1001;";
+  document.body.appendChild(helpOverlay);
+
+  const helpMenu = document.createElement("div");
+  helpMenu.id = "help_menu";
+  helpMenu.style.cssText =
+    "display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);" +
+    "width:min(360px,90vw);max-height:80vh;overflow-y:auto;background:#161616;" +
+    "border:1px solid #333;border-radius:8px;z-index:1002;font:12px monospace;color:#ddd;";
+  helpMenu.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #2a2a2a;color:#7fd67f;">
+      <span>How to connect to the internet</span>
+      <button id="help_menu_close" style="background:none;border:none;color:#888;font:16px monospace;padding:2px 6px;">✕</button>
+    </div>
+    <div style="padding:12px;line-height:1.6;">
+      <p style="margin-top:0;color:#aaa;">
+        TinyCore doesn't get internet access automatically. After it boots,
+        open a terminal and run:
+      </p>
+      <pre style="background:#1c1c1c;border:1px solid #2a2a2a;border-radius:5px;padding:8px;overflow-x:auto;color:#9f9;">sudo udhcpc</pre>
+      <p style="color:#aaa;">
+        This requests an IP address over the emulated network connection.
+        You should see output ending in something like
+        <code style="color:#9f9;">lease of 10.0.2.15 obtained</code>.
+      </p>
+      <p style="color:#aaa;">Then check it worked:</p>
+      <pre style="background:#1c1c1c;border:1px solid #2a2a2a;border-radius:5px;padding:8px;overflow-x:auto;color:#9f9;">ifconfig</pre>
+      <p style="color:#aaa;">Look for an <code style="color:#9f9;">inet addr</code> on <code style="color:#9f9;">eth0</code> (not just <code style="color:#9f9;">lo</code>).</p>
+      <p style="color:#aaa;">Then test the connection:</p>
+      <pre style="background:#1c1c1c;border:1px solid #2a2a2a;border-radius:5px;padding:8px;overflow-x:auto;color:#9f9;">ping -c 3 8.8.8.8
+ping -c 3 google.com</pre>
+      <p style="color:#aaa;">
+        The second command also checks DNS, which can fail independently
+        of basic connectivity.
+      </p>
+      <p style="color:#a95;">
+        <b>Known limitation:</b> loading a saved state (from the Saves
+        menu) can leave the network stuck even after a fresh
+        <code style="color:#9f9;">sudo udhcpc</code>, since VM snapshots
+        don't include the live network connection itself. If that
+        happens, try:
+      </p>
+      <pre style="background:#1c1c1c;border:1px solid #2a2a2a;border-radius:5px;padding:8px;overflow-x:auto;color:#9f9;">sudo ifconfig eth0 down
+sudo ifconfig eth0 up
+sudo udhcpc -i eth0</pre>
+      <p style="color:#aaa;">
+        This is also flaky since the network is running over a shared
+        public relay, which can be slow or briefly unavailable — a few
+        retries are normal.
+      </p>
+    </div>
+  `;
+  document.body.appendChild(helpMenu);
+
+  helpToggle.addEventListener("click", () => {
+    helpOverlay.style.display = "block";
+    helpMenu.style.display = "block";
+  });
+  function closeHelpMenu() {
+    helpOverlay.style.display = "none";
+    helpMenu.style.display = "none";
+  }
+  helpOverlay.addEventListener("click", closeHelpMenu);
+  helpMenu.querySelector("#help_menu_close").addEventListener("click", closeHelpMenu);
+
   function dlog(msg) {
     const line = document.createElement("div");
     const t = new Date().toLocaleTimeString();
